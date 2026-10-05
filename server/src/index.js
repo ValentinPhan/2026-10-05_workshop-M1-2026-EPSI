@@ -16,6 +16,16 @@ let latest = null; // dernier snapshot brut du Raspberry
 let analysis = null; // dernier résultat du modèle IA (arrive en différé)
 let analyzing = false;
 
+// Point d'historique compact (même forme que dans client/src/hooks/useSentinel.js)
+const sensorPoint = (s) => ({
+  ts: s.ts,
+  distanceCm: s.ultrasonic.distanceCm,
+  avgC: s.thermal.avgC,
+  maxC: s.thermal.maxC,
+  envTempC: s.environment?.tempC ?? null,
+  humidityPct: s.environment?.humidityPct ?? null,
+});
+
 const push = (arr, item) => {
   arr.push(item);
   if (arr.length > config.historySize) arr.shift();
@@ -39,7 +49,7 @@ const broadcastAlerts = (created) => created.forEach((alert) => broadcast({ type
 // ---- Chemin rapide : donnée brute du Pi -> front, sans attendre le modèle ----
 function onSnapshot(raw) {
   latest = raw;
-  push(sensorHistory, { ts: raw.ts, distanceCm: raw.ultrasonic.distanceCm, avgC: raw.thermal.avgC, maxC: raw.thermal.maxC });
+  push(sensorHistory, sensorPoint(raw));
   broadcast({ type: 'snapshot', data: raw });
   broadcastAlerts(alertEngine.evaluateSensors(raw));
   runAnalysis(raw); // volontairement non attendu
@@ -62,13 +72,14 @@ async function runAnalysis(raw) {
       latencyMs: Date.now() - startedAt,
       detections: out.detections,
       threat: out.threat,
+      environment: out.environment ?? null,
     };
     push(threatHistory, { ts: raw.ts, score: out.threat.score });
     broadcast({ type: 'analysis', data: analysis });
     broadcastAlerts(alertEngine.evaluateAnalysis(analysis));
     if (!wasOk) console.log('[sentinel-x] modèle IA de nouveau disponible');
   } catch (err) {
-    analysis = { ok: false, source: analyzer.name, forTs: raw.ts, ts: Date.now(), error: err.message, detections: [], threat: null };
+    analysis = { ok: false, source: analyzer.name, forTs: raw.ts, ts: Date.now(), error: err.message, detections: [], threat: null, environment: null };
     broadcast({ type: 'analysis', data: analysis });
     if (wasOk) console.warn(`[sentinel-x] modèle IA indisponible : ${err.message}`);
   } finally {
@@ -102,7 +113,7 @@ app.post('/api/motor', async (req, res) => {
   }
 });
 
-// Scénarios de démo (mock uniquement) : intruder | heat
+// Scénarios de démo (mock uniquement) : intruder | heat | window
 app.post('/api/mock/:scenario', (req, res) => {
   if (typeof provider.triggerScenario !== 'function') {
     return res.status(404).json({ error: 'Disponible uniquement avec PROVIDER=mock' });

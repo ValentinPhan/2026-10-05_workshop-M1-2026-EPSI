@@ -15,7 +15,7 @@ Variables d'environnement utiles (serveur) : `PORT`, `PROVIDER` (`mock` | `ssh`)
 ## Architecture
 
 ```
-Raspberry Pi ──(brut : caméra, ultrason, thermique)──► API ──► front   (chemin rapide, chaque seconde)
+Raspberry Pi ──(brut : caméra, ultrason, thermique, DHT22)──► API ──► front   (chemin rapide, chaque seconde)
       ▲                                                 │
       └──────────(ordres moteur)────────────────────────┤
                                                         └─► modèle IA local ──► API ──► front   (chemin lent, en différé)
@@ -25,7 +25,7 @@ Raspberry Pi ──(brut : caméra, ultrason, thermique)──► API ──► 
 - L'API diffuse les données brutes au front **sans attendre** le modèle (message WS `snapshot`).
 - En parallèle elle envoie le snapshot au **modèle IA local** (`server/src/ai/`). Son résultat (score de menace + détections caméra) repart vers le front plus tard (message WS `analysis`, avec `forTs` = snapshot analysé et `latencyMs`).
 - Si le modèle est occupé, le snapshot est sauté (pas de file d'attente). S'il est injoignable, le dashboard continue et affiche « IA hors ligne ».
-- Alertes : proximité et pic thermique = seuils sur la donnée brute (immédiat) ; intrusion = dépend du modèle IA.
+- Alertes : proximité et pic thermique = seuils sur la donnée brute (immédiat) ; intrusion et anomalie d'environnement = dépendent du modèle IA.
 
 Variables : `ANALYZER` (`mock` = heuristique avec latence simulée | `http` = service Python), `AI_URL` (défaut `http://localhost:8000`), `AI_TIMEOUT_MS`.
 Contrat du modèle (`POST {AI_URL}/analyze`) documenté dans `server/src/ai/httpAnalyzer.js`.
@@ -37,18 +37,19 @@ Contrat du modèle (`POST {AI_URL}/analyze`) documenté dans `server/src/ai/http
 | Caméra | flux (faux flux canvas en mock, webcam du PC via l'interrupteur, `camera.streamUrl` pour le vrai) + détections du modèle IA (masquées après 3 s) |
 | Ultrason | distance, radar orienté selon l'angle du moteur, historique |
 | Thermique | matrice 8×8, moyenne / max, historique |
+| Environnement (DHT22) | température, humidité, point de rosée, score d'anomalie IA et ses raisons, historiques |
 | Moteur | angle, cible, vitesse, mode ; commandes : position, pas, centrer, balayage auto, vitesse, stop |
-| Score de menace | calculé par le modèle IA local, affiché en différé (mock : fusion caméra 50 % / ultrason 30 % / thermique 20 %) |
-| Alertes | proximité (< 80 cm), pic thermique (> 45 °C), intrusion (modèle IA) ; seuils dans `server/src/config.js` |
+| Score de menace | calculé par le modèle IA local, affiché en différé (mock : fusion caméra 45 % / ultrason 25 % / thermique 15 % / environnement 15 %) |
+| Alertes | proximité (< 80 cm), pic thermique (> 45 °C), intrusion (modèle IA), anomalie d'environnement (score DHT22 ≥ 70) ; seuils dans `server/src/config.js` |
 | Raspberry Pi | CPU, RAM, température, uptime |
 
-En mode mock, deux boutons du journal d'alertes déclenchent un intrus ou un pic thermique pour la démo.
+En mode mock, trois boutons du journal d'alertes déclenchent un intrus, un pic thermique ou une fenêtre ouverte pour la démo.
 
 ## API
 
 - `GET /api/health`, `GET /api/snapshot` (brut), `GET /api/analysis` (dernier résultat IA), `GET /api/history` (`{sensors, threat}`), `GET /api/alerts`
 - `POST /api/motor` — `{type:'move',angle}` · `{type:'step',delta}` · `{type:'sweep',enabled}` · `{type:'speed',value}` · `{type:'stop'}`
-- `POST /api/mock/:scenario` — `intruder` | `heat` (mock uniquement)
+- `POST /api/mock/:scenario` — `intruder` | `heat` | `window` (mock uniquement)
 - WebSocket `/ws` — messages `hello`, `snapshot`, `analysis`, `alert`, `motor`
 
 ## Brancher le vrai Raspberry Pi (SSH)
@@ -58,9 +59,30 @@ Tout passe par un *provider* (`server/src/providers/`). Pour remplacer le mock, 
 et la même forme de snapshot — le moteur d'alertes, l'API et le front n'ont pas à changer.
 Le contrat et une piste d'implémentation (`ssh2` + script Python côté Pi) sont documentés en tête de `sshProvider.js`.
 
+## Capteur DHT22 (température / humidité)
+
+Module 3 broches « V182 » : capteur **DHT22 / AM2302** (−40 à 80 °C ±0,5 °C, 0 à 100 % HR ±2 à 5 %,
+**une mesure toutes les 2 s au maximum**, protocole fil unique propriétaire — pas du 1-Wire). Résistance de tirage déjà sur le module.
+
+- **Câblage** : `+` → 3,3 V (broche 1, surtout pas 5 V), `out` → GPIO4 (broche 7), `−` → GND (broche 6).
+- **Lecture côté Pi** : `pi/dht22_reader.py` (pilote noyau `dtoverlay=dht11,gpiopin=4`, repli Adafruit) → une ligne JSON par mesure,
+  `{tempC, humidityPct, readAt}` = champ `environment` du snapshot. `--csv dht22_log.csv` journalise les données d'entraînement.
+- **Ce que l'IA en fait** :
+  - température ambiante fiable pour la matrice thermique (remplace la médiane de la grille, faussée quand une personne remplit le champ) ;
+  - détection d'anomalies d'environnement (surchauffe / départ de feu, fenêtre ou porte ouverte, condensation), ajoutée au score de menace.
+- **Algorithme** : détection d'anomalies **non supervisée** sur des variables dérivées (température, humidité, point de rosée,
+  pentes sur 1 / 5 / 15 min, heure de la journée) + garde-fous déterministes (> 45 °C, montée > 2 °C/min, air proche de la saturation).
+  - `server/src/ai/envAnomaly.js` : version en ligne (moyennes / variances glissantes + z-score), utilisée par l'analyseur mock.
+    Elle apprend la normale de la pièce pendant ~1 min puis n'apprend plus des anomalies.
+  - `ai/env_model.py` : **Isolation Forest** (scikit-learn) entraînée sur quelques jours de données normales, pour le service IA Python.
+    `pip install -r ai/requirements.txt` puis `python3 ai/env_model.py demo` (données synthétiques), `train dht22_log.csv`, `score dht22_log.csv`.
+  - Sortie commune : `environment: {score 0..100, label, dewPointC, reasons[]}` dans la réponse de `/analyze`.
+
 ## Structure
 
 ```
-server/src/  index.js (API + WS) · alerts.js · config.js · providers/ (mock, ssh, motor) · ai/ (mock, http)
+server/src/  index.js (API + WS) · alerts.js · config.js · providers/ (mock, ssh, motor) · ai/ (mock, http, envAnomaly)
 client/src/  App.jsx · hooks/useSentinel.js · components/
+pi/          dht22_reader.py (lecture du capteur sur le Raspberry)
+ai/          env_model.py (Isolation Forest sur le DHT22, pour le service IA Python)
 ```

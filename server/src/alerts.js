@@ -1,7 +1,7 @@
 // Moteur d'alertes, indépendant du provider et du modèle IA.
 // Deux chemins :
 //   - evaluateSensors(snapshot) : seuils sur la donnée brute (immédiat, marche sans IA)
-//   - evaluateAnalysis(analysis) : règles qui dépendent du modèle IA (intrusion)
+//   - evaluateAnalysis(analysis) : règles qui dépendent du modèle IA (intrusion, anomalie d'environnement)
 // Une alerte est émise au passage "condition fausse -> vraie" (pas à chaque tick).
 export function createAlertEngine({ thresholds, size }) {
   const alerts = [];
@@ -49,6 +49,7 @@ export function createAlertEngine({ thresholds, size }) {
     evaluateAnalysis(a) {
       if (!a.ok) return [];
       const person = a.detections.find((d) => d.label === 'person' && d.confidence >= thresholds.personConfidence);
+      const env = a.environment;
       return run(
         [
           {
@@ -56,6 +57,12 @@ export function createAlertEngine({ thresholds, size }) {
             level: 'critical',
             on: Boolean(person),
             message: person ? `Intrusion détectée par le modèle IA (personne, ${Math.round(person.confidence * 100)} %)` : '',
+          },
+          {
+            key: 'environment',
+            level: 'warning',
+            on: Boolean(env && env.score >= thresholds.envAnomalyScore),
+            message: env ? `Anomalie d'environnement (DHT22, score ${env.score}) : ${env.reasons.join(', ') || 'écart à la normale'}` : '',
           },
         ],
         a.ts,

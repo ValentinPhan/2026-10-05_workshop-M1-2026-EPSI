@@ -23,5 +23,6 @@ export const config = {
     proximityCm: 80,
     heatMaxC: 45,
     personConfidence: 0.6,
+    envAnomalyScore: 70, // score d'anomalie DHT22 (0..100) au-delà duquel on alerte
   },
 };
