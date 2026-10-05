@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] }
+  },
+  "tasks": [
+    {
+      "label": "Front (Vite)",
+      "type": "shell",
+      "command": "npm run dev -w client -- --open",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": { "regexp": "^$" },
+        "background": { "activeOnStart": true, "beginsPattern": "VITE", "endsPattern": "ready in" }
+      }
+    },
+    {
+      "label": "Back (API)",
+      "type": "shell",
+      "command": "npm run dev -w server",
+      "isBackground": true,
+      "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
+      "problemMatcher": {
+        "owner": "sentinel-api",
+        "pattern": { "regexp": "^$" },
+        "background": { "activeOnStart": true, "beginsPattern": "node --watch", "endsPattern": "\\[sentinel-x\\] API" }
+      }
+    },
+    {
+      "label": "Sentinel-X (Back + Front, sans debug)",
+      "dependsOn": ["Back (API)", "Front (Vite)"],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    }
+  ]
+}
