@@ -1,0 +1,4 @@
+# Secrets
+.env
+infra/pki/out/
+*.key

@@ -1,0 +1,26 @@
+# ACL Mosquitto — l'identifiant est le CN du certificat client.
+# Voir docs/mqtt-contract.md. Tout ce qui n'est pas listé est refusé.
+
+# Boîtier ESP8266 n°1
+user esp-node-01
+topic write sentinel/esp-node-01/telemetry
+topic write sentinel/esp-node-01/event
+topic write sentinel/esp-node-01/status
+topic read sentinel/esp-node-01/cmd
+
+# Backend API : lit tout, ne commande que les boîtiers
+user api
+topic read sentinel/#
+topic write sentinel/+/cmd
+
+# Détection d'anomalies capteurs
+user ia-anomaly
+topic read sentinel/+/telemetry
+topic read sentinel/+/event
+topic write sentinel/alerts/anomaly
+topic write sentinel/services/ia-anomaly/status
+
+# Détection d'intrus par vision
+user ia-vision
+topic write sentinel/alerts/vision
+topic write sentinel/services/ia-vision/status
