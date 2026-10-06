@@ -1,10 +1,13 @@
-// Provider fictif : simule le Raspberry Pi (caméra, ultrason, thermique, moteur).
+// Provider fictif : simule le Raspberry Pi (caméra, ultrason, thermique, DHT22, moteur).
 // Même contrat que sshProvider.js — voir providers/index.js.
 import { applyMotorCommand, clamp } from './motor.js';
 
 const GRID = 8; // matrice thermique 8x8 (type AMG8833)
 const MAX_RANGE_CM = 400;
 const WALL_CM = 300;
+const DHT_PERIOD_S = 2; // le DHT22 ne fournit qu'une mesure toutes les 2 s
+const DHT_TAU_S = 20; // inertie du capteur (constante de temps)
+const DHT_FAIL_RATE = 0.03; // lectures ratées (checksum / timeout), fréquentes sous Linux
 
 const rand = (min, max) => min + Math.random() * (max - min);
 const noise = (amp) => (Math.random() - 0.5) * 2 * amp;
@@ -18,6 +21,10 @@ export function createMockProvider({ tickMs }) {
   const intruder = { phase: 'idle', distance: WALL_CM, x: 0.5, timeLeft: rand(15, 30) };
   // Pic thermique simulé (ex. surchauffe d'un équipement)
   const heat = { remaining: 0, boost: 0 };
+  // Fenêtre ouverte simulée : air extérieur plus froid et plus humide
+  const windowOpen = { remaining: 0, mix: 0 };
+  // État interne du DHT22 (valeur "vue" par le capteur, en retard sur l'air réel)
+  const dht = { tempC: 23, humidityPct: 48, nextReadIn: 0, last: null };
 
   const motor = { angle: 0, target: 0, speed: 40, mode: 'manual', moving: false };
   let sweepDir = 1;
@@ -70,8 +77,34 @@ export function createMockProvider({ tickMs }) {
     motor.angle = Math.abs(diff) <= maxStep ? motor.target : motor.angle + Math.sign(diff) * maxStep;
   }
 
+  // Température de l'air de la pièce : dérive lente (cycle de 1 h environ)
+  const roomTempC = () => 23 + 1.2 * Math.sin(t / 600);
+
+  function stepDht(dt) {
+    windowOpen.mix = clamp(windowOpen.mix + (windowOpen.remaining > 0 ? 0.05 : -0.02) * dt, 0, 1);
+    const present = intruder.phase !== 'idle' && intruder.phase !== 'leave';
+    // air réel : pièce + chaleur de l'équipement en surchauffe + air extérieur (fenêtre)
+    const airT = roomTempC() + heat.boost * 0.2 - 6 * windowOpen.mix;
+    const baseRh = 48 + 2 * Math.sin(t / 900) + (present ? 2 : 0);
+    // l'air chauffé s'assèche (~ -3 % HR / °C), l'air extérieur est humide
+    const airRh = clamp(baseRh - heat.boost * 0.6 + 25 * windowOpen.mix, 5, 99);
+    const k = 1 - Math.exp(-dt / DHT_TAU_S);
+    dht.tempC += (airT - dht.tempC) * k;
+    dht.humidityPct += (airRh - dht.humidityPct) * k;
+
+    dht.nextReadIn -= dt;
+    if (dht.nextReadIn > 0) return;
+    dht.nextReadIn = DHT_PERIOD_S;
+    if (dht.last && Math.random() < DHT_FAIL_RATE) return; // lecture ratée : on garde l'ancienne
+    dht.last = {
+      tempC: Number((dht.tempC + noise(0.1)).toFixed(1)),
+      humidityPct: Number(clamp(dht.humidityPct + noise(0.3), 0, 100).toFixed(1)),
+      readAt: Date.now(),
+    };
+  }
+
   function buildThermal() {
-    const ambient = 24 + 1.5 * Math.sin(t / 60);
+    const ambient = roomTempC() + 1 - 5 * windowOpen.mix; // les surfaces vues refroidissent aussi
     if (heat.remaining > 0) heat.boost = Math.min(heat.boost + 1.5, 30);
     else heat.boost = Math.max(heat.boost - 1, 0);
     const present = intruder.phase !== 'idle' ? clamp((WALL_CM - intruder.distance) / 250, 0, 1) : 0;
@@ -115,6 +148,7 @@ export function createMockProvider({ tickMs }) {
       thermal: buildThermal(),
       camera: buildCamera(),
       motor: { ...motor, angle: Number(motor.angle.toFixed(1)) },
+      environment: { ...dht.last },
       system: buildSystem(),
     };
   }
@@ -124,12 +158,15 @@ export function createMockProvider({ tickMs }) {
 
     start(onSnapshot) {
       const dt = tickMs / 1000;
+      stepDht(0);
       onSnapshot(getSnapshot()); // pas d'écran vide au premier chargement
       timer = setInterval(() => {
         t += dt;
         heat.remaining = Math.max(0, heat.remaining - dt);
+        windowOpen.remaining = Math.max(0, windowOpen.remaining - dt);
         stepIntruder(dt);
         stepMotor(dt);
+        stepDht(dt);
         onSnapshot(getSnapshot());
       }, tickMs);
     },
@@ -153,6 +190,8 @@ export function createMockProvider({ tickMs }) {
         startIntruder();
       } else if (name === 'heat') {
         heat.remaining = 12;
+      } else if (name === 'window') {
+        windowOpen.remaining = 40;
       } else {
         throw new Error(`Scénario inconnu : ${name}`);
       }

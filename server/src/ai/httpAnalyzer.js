@@ -3,7 +3,9 @@
 // Contrat :  POST {AI_URL}/analyze
 //   corps    : le snapshot brut du Raspberry (JSON, voir providers/sshProvider.js)
 //   réponse  : { detections: [{label, confidence, bbox:{x,y,w,h}}],   // bbox normalisée 0..1
-//                threat: { score: 0..100, label: 'Calme'|'Vigilance'|'Menace' } }
+//                threat: { score: 0..100, label: 'Calme'|'Vigilance'|'Menace' },
+//                environment?: { score: 0..100, label, dewPointC, reasons: [string] } }   // DHT22, optionnel
+//   (`environment` : voir ai/env_model.py, Isolation Forest sur température / humidité)
 //
 // L'image n'est pas dans le snapshot (trop lourde) : le service lit lui-même le flux
 // de la caméra via `camera.streamUrl`.
@@ -22,7 +24,7 @@ export function createHttpAnalyzer({ url, timeoutMs }) {
       if (!Array.isArray(out.detections) || typeof out.threat?.score !== 'number') {
         throw new Error('réponse du modèle invalide');
       }
-      return out;
+      return { ...out, environment: out.environment ?? null };
     },
   };
 }
