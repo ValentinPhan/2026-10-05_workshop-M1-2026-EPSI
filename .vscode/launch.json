@@ -3,13 +3,14 @@
   "configurations": [
     {
       "name": "Sentinel-X (Back + Front)",
-      "type": "node",
+      "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/server/src/index.js",
-      "cwd": "${workspaceFolder}/server",
-      "runtimeArgs": ["--watch"],
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "4000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
+      "justMyCode": true,
       "preLaunchTask": "Front (Vite)"
     }
   ]

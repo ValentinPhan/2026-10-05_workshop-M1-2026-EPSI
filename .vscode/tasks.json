@@ -7,31 +7,38 @@
     {
       "label": "Front (Vite)",
       "type": "shell",
-      "command": "npm run dev -w client -- --open",
+      // Le front attend que l'API réponde sur :4000 avant de démarrer. La ligne "Attente de l'API"
+      // sert aussi de signal "prêt" au débogueur (preLaunchTask) : sans elle, F5 ne lancerait
+      // jamais l'API, qui est justement ce que le front attend.
+      "command": "echo Attente de l'API sur :4000... && powershell -NoProfile -ExecutionPolicy Bypass -File .vscode\\wait-for-api.ps1 && npm run dev -w client -- --open",
       "isBackground": true,
       "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
       "problemMatcher": {
         "owner": "vite",
         "pattern": { "regexp": "^$" },
-        "background": { "activeOnStart": true, "beginsPattern": "VITE", "endsPattern": "ready in" }
+        "background": { "activeOnStart": true, "beginsPattern": "VITE", "endsPattern": "Attente de l'API|ready in" }
       }
     },
     {
-      "label": "Back (API)",
+      "label": "Back (API Python)",
       "type": "shell",
-      "command": "npm run dev -w server",
+      "command": ".venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --reload-dir app --port 4000",
+      "options": {
+        "cwd": "${workspaceFolder}/backend",
+        "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] }
+      },
       "isBackground": true,
       "presentation": { "panel": "dedicated", "reveal": "always", "clear": true },
       "problemMatcher": {
         "owner": "sentinel-api",
         "pattern": { "regexp": "^$" },
-        "background": { "activeOnStart": true, "beginsPattern": "node --watch", "endsPattern": "\\[sentinel-x\\] API" }
+        "background": { "activeOnStart": true, "beginsPattern": "Will watch|Uvicorn running", "endsPattern": "Application startup complete" }
       }
     },
     {
       "label": "Sentinel-X (Back + Front, sans debug)",
-      "dependsOn": ["Back (API)", "Front (Vite)"],
-      "dependsOrder": "parallel",
+      "dependsOn": ["Back (API Python)", "Front (Vite)"],
+      "dependsOrder": "sequence",
       "problemMatcher": []
     }
   ]

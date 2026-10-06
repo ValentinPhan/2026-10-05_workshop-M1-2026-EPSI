@@ -2,15 +2,14 @@
   "name": "sentinel-x",
   "private": true,
   "version": "0.1.0",
-  "description": "Sentinel-X — dashboard de supervision (API Node.js + front React)",
+  "description": "Sentinel-X — dashboard de supervision (API Python/FastAPI + front React)",
   "workspaces": [
-    "server",
     "client"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c cyan,magenta \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w client",
-    "start": "npm run start -w server"
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run api\" \"npm run dev -w client\"",
+    "api": "python -m uvicorn app.main:app --reload --reload-dir backend/app --app-dir backend --port 4000",
+    "build": "npm run build -w client"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
