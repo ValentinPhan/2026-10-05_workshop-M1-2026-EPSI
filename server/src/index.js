@@ -20,8 +20,8 @@ let analyzing = false;
 const sensorPoint = (s) => ({
   ts: s.ts,
   distanceCm: s.ultrasonic.distanceCm,
-  avgC: s.thermal.avgC,
-  maxC: s.thermal.maxC,
+  avgC: s.thermal?.avgC ?? null,
+  maxC: s.thermal?.maxC ?? null,
   envTempC: s.environment?.tempC ?? null,
   humidityPct: s.environment?.humidityPct ?? null,
 });

@@ -6,7 +6,7 @@ export function createProvider(config) {
     case 'mock':
       return createMockProvider({ tickMs: config.tickMs });
     case 'ssh':
-      return createSshProvider(config.ssh);
+      return createSshProvider(config.ssh, { tickMs: config.tickMs });
     default:
       throw new Error(`PROVIDER inconnu : ${config.provider} (mock | ssh)`);
   }

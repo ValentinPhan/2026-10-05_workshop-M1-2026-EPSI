@@ -11,6 +11,7 @@ const EMPTY_DISTANCE_CM = 300; // distance mesurée quand la pièce est vide
 const median = (arr) => [...arr].sort((a, b) => a - b)[Math.floor(arr.length / 2)];
 
 function detectPerson({ thermal, ultrasonic, environment }) {
+  if (!thermal) return []; // sans matrice thermique, l'heuristique ne détecte rien (la caméra est analysée par le vrai modèle)
   // Ambiante : mesure du DHT22 si disponible (fiable même si une personne remplit le champ),
   // sinon médiane de la matrice. +1 °C : la matrice lit un peu plus chaud que l'air (murs, objets).
   const ambient = typeof environment?.tempC === 'number' ? environment.tempC + 1 : median(thermal.grid.flat());
@@ -45,7 +46,7 @@ function detectPerson({ thermal, ultrasonic, environment }) {
 function threatScore(s, detections, env) {
   const person = Math.max(0, ...detections.filter((d) => d.label === 'person').map((d) => d.confidence));
   const prox = clamp((200 - s.ultrasonic.distanceCm) / 150, 0, 1);
-  const heat = clamp((s.thermal.maxC - 30) / 25, 0, 1);
+  const heat = s.thermal ? clamp((s.thermal.maxC - 30) / 25, 0, 1) : 0;
   const envRisk = env ? env.score / 100 : 0;
   const score = Math.round(100 * (0.45 * person + 0.25 * prox + 0.15 * heat + 0.15 * envRisk));
   const label = score < 30 ? 'Calme' : score < 60 ? 'Vigilance' : 'Menace';

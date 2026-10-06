@@ -37,8 +37,8 @@ export function createAlertEngine({ thresholds, size }) {
           {
             key: 'heat',
             level: 'warning',
-            on: s.thermal.maxC > thresholds.heatMaxC,
-            message: `Pic thermique : ${s.thermal.maxC} °C (seuil ${thresholds.heatMaxC} °C)`,
+            on: Boolean(s.thermal) && s.thermal.maxC > thresholds.heatMaxC, // pas de matrice thermique : pas d'alerte
+            message: `Pic thermique : ${s.thermal?.maxC} °C (seuil ${thresholds.heatMaxC} °C)`,
           },
         ],
         s.ts,

@@ -65,7 +65,7 @@ export default function App() {
               </Flex>
             </Col>
             <Col xs={24} md={12} xl={8}><UltrasonicPanel ultrasonic={snapshot.ultrasonic} angle={snapshot.motor.angle} history={history} /></Col>
-            <Col xs={24} md={12} xl={8}><ThermalPanel thermal={snapshot.thermal} history={history} /></Col>
+            {snapshot.thermal && <Col xs={24} md={12} xl={8}><ThermalPanel thermal={snapshot.thermal} history={history} /></Col>}
             <Col xs={24} md={12} xl={8}><EnvironmentPanel environment={snapshot.environment} analysis={analysis} history={history} /></Col>
             <Col xs={24} md={12} xl={8}><MotorPanel motor={snapshot.motor} sendMotor={sendMotor} /></Col>
             <Col xs={24} xl={16}><AlertsPanel alerts={alerts} triggerScenario={triggerScenario} mock={provider === 'mock'} /></Col>

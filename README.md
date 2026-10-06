@@ -1,7 +1,7 @@
 # Sentinel-X — Dashboard (workshop M1 2026 EPSI)
 
 Dashboard de supervision du boîtier Sentinel-X : API Node.js (Express + WebSocket) et front React (Vite) avec Ant Design (thème sombre).
-Pour l'instant les données du Raspberry Pi sont **simulées** (provider `mock`).
+Par défaut les données du Raspberry Pi sont **simulées** (provider `mock`) ; `PROVIDER=ssh` branche le vrai Pi.
 
 ## Lancer
 
@@ -54,10 +54,12 @@ En mode mock, trois boutons du journal d'alertes déclenchent un intrus, un pic 
 
 ## Brancher le vrai Raspberry Pi (SSH)
 
-Tout passe par un *provider* (`server/src/providers/`). Pour remplacer le mock, il suffit d'implémenter
-`sshProvider.js` avec le même contrat que `mockProvider.js` (`start`, `stop`, `getSnapshot`, `sendMotorCommand`)
-et la même forme de snapshot — le moteur d'alertes, l'API et le front n'ont pas à changer.
-Le contrat et une piste d'implémentation (`ssh2` + script Python côté Pi) sont documentés en tête de `sshProvider.js`.
+`PROVIDER=ssh` : le serveur se connecte au Pi (`ssh2`) et y lance `pi/sentinel_agent.py`, qui envoie un snapshot JSON par ligne
+et reçoit les commandes moteur sur son entrée standard. Montage, câblage et mise en service pas à pas : **[pi/README.md](pi/README.md)**.
+
+Variables : `SSH_HOST`, `SSH_PORT`, `SSH_USER`, `SSH_KEY` (ou `SSH_PASSWORD`), `AGENT_COMMAND` (défaut `python3 ~/sentinel-x/pi/sentinel_agent.py`),
+`STREAM_URL` (flux MJPEG de la caméra), `AGENT_LOCAL=1` (agent simulé sur le PC, sans Raspberry).
+Le module thermique est **optionnel** : sans matrice AMG8833, `thermal` vaut `null`, le panneau et l'alerte de pic thermique sont désactivés.
 
 ## Capteur DHT22 (température / humidité)
 
@@ -83,6 +85,7 @@ Module 3 broches « V182 » : capteur **DHT22 / AM2302** (−40 à 80 °C ±0,5 
 ```
 server/src/  index.js (API + WS) · alerts.js · config.js · providers/ (mock, ssh, motor) · ai/ (mock, http, envAnomaly)
 client/src/  App.jsx · hooks/useSentinel.js · components/
-pi/          dht22_reader.py (lecture du capteur sur le Raspberry)
+pi/          sentinel_agent.py (agent sur le Raspberry : ultrason, moteur, DHT22, système) · dht22_reader.py · README.md (montage)
+arduino/     sentinel_io (firmware Uno de test : ultrason + moteur, liaison série)
 ai/          env_model.py (Isolation Forest sur le DHT22, pour le service IA Python)
 ```
