@@ -9,6 +9,7 @@ import time
 
 from ..providers.motor import clamp
 from .env_anomaly import EnvDetector
+from .threat import threat_score
 
 GRID = 8
 EMPTY_DISTANCE_CM = 300  # distance mesurée quand la pièce est vide
@@ -49,17 +50,6 @@ def _detect_person(snapshot: dict) -> list[dict]:
     ]
 
 
-def _threat_score(snapshot: dict, detections: list[dict], env: dict | None) -> dict:
-    """Fusion de capteurs : présence 45 %, proximité 25 %, chaleur 15 %, environnement (DHT22) 15 %."""
-    person = max([d["confidence"] for d in detections if d["label"] == "person"], default=0)
-    prox = clamp((200 - snapshot["ultrasonic"]["distanceCm"]) / 150, 0, 1)
-    heat = clamp((snapshot["thermal"]["maxC"] - 30) / 25, 0, 1)
-    env_risk = env["score"] / 100 if env else 0
-    score = round(100 * (0.45 * person + 0.25 * prox + 0.15 * heat + 0.15 * env_risk))
-    label = "Calme" if score < 30 else "Vigilance" if score < 60 else "Menace"
-    return {"score": score, "label": label}
-
-
 class MockAnalyzer:
     name = "heuristique (mock)"
 
@@ -72,6 +62,6 @@ class MockAnalyzer:
         environment = self._env.update(snapshot.get("environment"))
         return {
             "detections": detections,
-            "threat": _threat_score(snapshot, detections, environment),
+            "threat": threat_score(snapshot, detections, environment),
             "environment": environment,
         }

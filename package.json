@@ -4,12 +4,14 @@
   "version": "0.1.0",
   "description": "Sentinel-X — dashboard de supervision (API Python/FastAPI + front React)",
   "workspaces": [
-    "client"
+    "frontend"
   ],
   "scripts": {
-    "dev": "concurrently -n api,web -c cyan,magenta \"npm run api\" \"npm run dev -w client\"",
-    "api": "python -m uvicorn app.main:app --reload --reload-dir backend/app --app-dir backend --port 4000",
-    "build": "npm run build -w client"
+    "dev": "concurrently -n api,web -c cyan,magenta \"npm run api\" \"npm run dev -w frontend\"",
+    "dev:yolo": "concurrently -n api,web -c cyan,magenta \"npm run api:yolo\" \"npm run dev -w frontend\"",
+    "api": "node scripts/run-api.mjs",
+    "api:yolo": "node scripts/run-api.mjs --yolo",
+    "build": "npm run build -w frontend"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"

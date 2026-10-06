@@ -3,7 +3,12 @@ dist/
 .env
 *.log
 .venv/
+venv/
 __pycache__/
 *.pyc
 *.joblib
-venv/
+
+# données générées à l'exécution
+backend/data/
+ml/vision/captures/
+ml/vision/runs/

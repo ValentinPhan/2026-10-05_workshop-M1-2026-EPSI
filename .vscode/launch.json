@@ -2,13 +2,46 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Sentinel-X (Back + Front)",
+      // PAR DÉFAUT. La webcam est ouverte par le NAVIGATEUR (le dashboard demande l'autorisation), ses images
+      // sont envoyées au backend, YOLO les traite et renvoie les positions : React dessine les carrés rouges.
+      // Le backend n'ouvre aucune caméra. Nécessite : pip install -r backend/requirements-vision.txt
+      // YOLO_MODEL : yolov8n-seg.pt = silhouettes ; yolov8n.pt = cadres seulement (2x plus rapide).
+      "name": "Sentinel-X + YOLO (webcam navigateur)",
       "type": "debugpy",
       "request": "launch",
       "module": "uvicorn",
       "args": ["app.main:app", "--port", "4000"],
       "cwd": "${workspaceFolder}/backend",
       "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "env": { "ANALYZER": "local", "VISION_SOURCE": "browser", "YOLO_MODEL": "yolov8n-seg.pt", "YOLO_IMGSZ": "480" },
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "preLaunchTask": "Front (Vite)"
+    },
+    {
+      // Données simulées, sans YOLO ni caméra : le panneau Caméra affiche un faux flux.
+      "name": "Sentinel-X (mock, sans YOLO)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "4000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "preLaunchTask": "Front (Vite)"
+    },
+    {
+      // Plus tard : YOLO sur une caméra branchée au backend (webcam du PC qui fait tourner le backend, ou flux du Pi).
+      // Pour le flux du Raspberry : remplacer VISION_SOURCE par l'URL du flux (ex. http://<ip-du-pi>:8080/video).
+      "name": "Sentinel-X + YOLO (caméra du backend)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--port", "4000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "env": { "ANALYZER": "local", "VISION_SOURCE": "0", "YOLO_MODEL": "yolov8n-seg.pt", "YOLO_IMGSZ": "480" },
       "console": "integratedTerminal",
       "justMyCode": true,
       "preLaunchTask": "Front (Vite)"

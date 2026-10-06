@@ -2,7 +2,7 @@
 
 Version "en ligne" sans dépendance, utilisée par l'analyseur mock : elle apprend en continu
 la normale de chaque variable (moyenne et variance glissantes, EWMA) et note l'écart de la
-mesure courante (z-score). Le modèle entraîné hors ligne (Isolation Forest, ai/env_model.py)
+mesure courante (z-score). Le modèle entraîné hors ligne (Isolation Forest, ml/environment/env_model.py)
 utilise les mêmes variables dérivées et le même format de sortie.
 
 Sortie : {score: 0..100, label: 'Apprentissage'|'Normal'|'Inhabituel'|'Anomalie',

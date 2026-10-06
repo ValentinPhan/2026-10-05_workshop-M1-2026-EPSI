@@ -1,44 +1,45 @@
-"""Modèle IA local (YOLO + détection d'anomalies) — À IMPLÉMENTER par l'équipe IA.
+"""Analyseur local : détections YOLO réelles + fusion des capteurs.
 
-Activation : lancer le backend avec ANALYZER=local.
-Les poids du modèle vont dans backend/models/.
+Activation : lancer le backend avec ANALYZER=local (nécessite `pip install -r requirements-vision.txt`).
 
-Contrat : une classe avec
-  name : str
-  analyze(snapshot: dict) -> dict      (SYNCHRONE et bloquante : c'est normal)
+Les détections viennent du service de vision (app/vision/ : caméra + YOLOv8 dans un thread dédié) ;
+ici on les combine avec les capteurs du Pi pour produire le même résultat que le faux modèle :
 
-Le backend appelle analyze() dans un thread (asyncio.to_thread) : un modèle lent ne
-bloque ni l'API ni l'affichage des données brutes. Si le modèle est occupé, les snapshots
-intermédiaires sont sautés (pas de file d'attente). Si analyze() lève une exception, le
-dashboard affiche « IA hors ligne » et continue de fonctionner.
+  Entrée  : le snapshot brut du Raspberry
+            { ts, ultrasonic:{distanceCm,maxRangeCm}, thermal:{avgC,maxC,grid[8][8]},
+              camera:{streamUrl,width,height,fps}, motor:{...},
+              environment:{tempC,humidityPct,readAt}, system:{...} }
 
-Entrée  : le snapshot brut du Raspberry
-          { ts, ultrasonic:{distanceCm,maxRangeCm}, thermal:{avgC,maxC,grid[8][8]},
-            camera:{streamUrl,width,height,fps}, motor:{...},
-            environment:{tempC,humidityPct,readAt}, system:{...} }
-          L'image n'est pas dans le snapshot : lire le flux via camera.streamUrl
-          (ou la webcam du PC en attendant).
-          `environment` (DHT22) ne change qu'une fois toutes les 2 s : `readAt` identifie la mesure.
+  Sortie  : { "detections": [{ "label": "person", "confidence": 0..1,
+                               "bbox": {"x","y","w","h"} }],      # bbox normalisée 0..1
+              "threat": { "score": 0..100, "label": "Calme" | "Vigilance" | "Menace" },
+              "environment": { "score": 0..100, "label", "dewPointC", "reasons": [str] } }  # optionnel
 
-Sortie  : { "detections": [{ "label": "person", "confidence": 0..1,
-                             "bbox": {"x","y","w","h"} }],      # bbox normalisée 0..1
-            "threat": { "score": 0..100, "label": "Calme" | "Vigilance" | "Menace" },
-            "environment": { "score": 0..100, "label": "Normal" | "Inhabituel" | "Anomalie",
-                             "dewPointC": float, "reasons": [str] } }   # optionnel (anomalies DHT22)
+`analyze()` est synchrone : le hub l'appelle dans un thread, un traitement long ne bloque pas l'API.
 
-Environnement : le modèle entraîné est dans ai/env_model.py (Isolation Forest, atelier de l'équipe IA,
-à la racine du dépôt). Garder une fenêtre glissante de 15 min des snapshot["environment"] reçus et
-renvoyer score_window(fenetre, modele) ; copier env_model.joblib dans backend/models/.
-Le faux modèle (mock_analyzer.py + env_anomaly.py) montre le format attendu.
+Pour remplacer la détection d'anomalies d'environnement par le modèle entraîné (Isolation Forest,
+ml/environment/env_model.py) : charger env_model.joblib depuis backend/models/ dans __init__ et appeler
+score_window(fenêtre glissante de 15 min des snapshot["environment"], modèle) à la place de EnvDetector.
 """
+from ..vision.service import VisionService
+from .env_anomaly import EnvDetector
+from .threat import threat_score
 
 
 class LocalAnalyzer:
-    name = "modèle IA local"
+    name = "YOLO + fusion capteurs"
 
-    def __init__(self) -> None:
-        # TODO : charger le modèle depuis backend/models/ (une seule fois, ici).
-        raise NotImplementedError("Modèle IA local non implémenté : lancer avec ANALYZER=mock")
+    def __init__(self, vision: VisionService | None) -> None:
+        if vision is None:
+            raise ValueError("ANALYZER=local nécessite le service de vision (app/vision/)")
+        self._vision = vision
+        self._env = EnvDetector()
 
     def analyze(self, snapshot: dict) -> dict:
-        raise NotImplementedError
+        detections = self._vision.latest_detections()  # [] si la caméra ou YOLO ne répond plus
+        environment = self._env.update(snapshot.get("environment"))
+        return {
+            "detections": detections,
+            "threat": threat_score(snapshot, detections, environment),
+            "environment": environment,
+        }
