@@ -17,6 +17,7 @@ class Thresholds:
     proximity_cm: float = 80
     heat_max_c: float = 45
     person_confidence: float = 0.6
+    env_anomaly_score: float = 70  # score d'anomalie DHT22 (0..100) au-delà duquel on alerte
 
 
 @dataclass(frozen=True)

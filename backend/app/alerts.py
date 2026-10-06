@@ -2,7 +2,7 @@
 
 Deux chemins :
   - evaluate_sensors(snapshot)  : seuils sur la donnée brute (immédiat, marche sans IA)
-  - evaluate_analysis(analysis) : règles qui dépendent du modèle IA (intrusion)
+  - evaluate_analysis(analysis) : règles qui dépendent du modèle IA (intrusion, anomalie d'environnement)
 Une alerte est émise au passage "condition fausse -> vraie" (pas à chaque tick).
 """
 from .config import Thresholds
@@ -64,6 +64,7 @@ class AlertEngine:
             (d for d in a["detections"] if d["label"] == "person" and d["confidence"] >= self._th.person_confidence),
             None,
         )
+        env = a.get("environment")
         return self._run(
             [
                 {
@@ -75,7 +76,18 @@ class AlertEngine:
                         if person
                         else ""
                     ),
-                }
+                },
+                {
+                    "key": "environment",
+                    "level": "warning",
+                    "on": bool(env and env["score"] >= self._th.env_anomaly_score),
+                    "message": (
+                        f"Anomalie d'environnement (DHT22, score {env['score']}) : "
+                        f"{', '.join(env['reasons']) or 'écart à la normale'}"
+                        if env
+                        else ""
+                    ),
+                },
             ],
             a["ts"],
         )

@@ -23,6 +23,19 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 
 
+def _sensor_point(raw: dict) -> dict:
+    """Point d'historique compact (même forme que sensorPoint dans client/src/hooks/useSentinel.js)."""
+    env = raw.get("environment") or {}
+    return {
+        "ts": raw["ts"],
+        "distanceCm": raw["ultrasonic"]["distanceCm"],
+        "avgC": raw["thermal"]["avgC"],
+        "maxC": raw["thermal"]["maxC"],
+        "envTempC": env.get("tempC"),
+        "humidityPct": env.get("humidityPct"),
+    }
+
+
 class Hub:
     def __init__(self, config: Config, provider, analyzer):
         self.provider = provider
@@ -73,14 +86,7 @@ class Hub:
     # ---- chemin rapide ----
     async def on_snapshot(self, raw: dict) -> None:
         self.latest = raw
-        self.sensor_history.append(
-            {
-                "ts": raw["ts"],
-                "distanceCm": raw["ultrasonic"]["distanceCm"],
-                "avgC": raw["thermal"]["avgC"],
-                "maxC": raw["thermal"]["maxC"],
-            }
-        )
+        self.sensor_history.append(_sensor_point(raw))
         await self.broadcast({"type": "snapshot", "data": raw})
         await self._broadcast_alerts(self.alerts.evaluate_sensors(raw))
         asyncio.create_task(self._run_analysis(raw))  # volontairement non attendu
@@ -108,6 +114,7 @@ class Hub:
                 "latencyMs": round((time.monotonic() - started) * 1000),
                 "detections": out["detections"],
                 "threat": out["threat"],
+                "environment": out.get("environment"),  # anomalies DHT22, optionnel
             }
             self.threat_history.append({"ts": raw["ts"], "score": out["threat"]["score"]})
             await self.broadcast({"type": "analysis", "data": self.analysis})
@@ -123,6 +130,7 @@ class Hub:
                 "error": str(err) or type(err).__name__,
                 "detections": [],
                 "threat": None,
+                "environment": None,
             }
             await self.broadcast({"type": "analysis", "data": self.analysis})
             if was_ok:

@@ -1,12 +1,14 @@
 """Analyseur factice : remplace le modèle IA tant qu'il n'existe pas.
 
-Il ne reçoit que des données BRUTES (comme le vrai modèle) : matrice thermique + ultrason.
+Il ne reçoit que des données BRUTES (comme le vrai modèle) : matrice thermique + ultrason + DHT22.
 Une "personne" = tache chaude sur la matrice ET obstacle plus proche que le mur.
+Le DHT22 donne la vraie température ambiante et alimente la détection d'anomalies d'environnement.
 """
 import random
 import time
 
 from ..providers.motor import clamp
+from .env_anomaly import EnvDetector
 
 GRID = 8
 EMPTY_DISTANCE_CM = 300  # distance mesurée quand la pièce est vide
@@ -14,8 +16,14 @@ EMPTY_DISTANCE_CM = 300  # distance mesurée quand la pièce est vide
 
 def _detect_person(snapshot: dict) -> list[dict]:
     thermal, distance = snapshot["thermal"], snapshot["ultrasonic"]["distanceCm"]
-    flat = [v for row in thermal["grid"] for v in row]
-    ambient = sorted(flat)[len(flat) // 2]  # médiane
+    # Ambiante : mesure du DHT22 si disponible (fiable même si une personne remplit le champ),
+    # sinon médiane de la matrice. +1 °C : la matrice lit un peu plus chaud que l'air (murs, objets).
+    env_temp = (snapshot.get("environment") or {}).get("tempC")
+    if isinstance(env_temp, (int, float)):
+        ambient = env_temp + 1
+    else:
+        flat = [v for row in thermal["grid"] for v in row]
+        ambient = sorted(flat)[len(flat) // 2]  # médiane
     body = thermal["maxC"] - ambient
     if body < 4 or distance > EMPTY_DISTANCE_CM - 30:
         return []
@@ -41,12 +49,13 @@ def _detect_person(snapshot: dict) -> list[dict]:
     ]
 
 
-def _threat_score(snapshot: dict, detections: list[dict]) -> dict:
-    """Fusion de capteurs : présence 50 %, proximité 30 %, chaleur 20 %."""
+def _threat_score(snapshot: dict, detections: list[dict], env: dict | None) -> dict:
+    """Fusion de capteurs : présence 45 %, proximité 25 %, chaleur 15 %, environnement (DHT22) 15 %."""
     person = max([d["confidence"] for d in detections if d["label"] == "person"], default=0)
     prox = clamp((200 - snapshot["ultrasonic"]["distanceCm"]) / 150, 0, 1)
     heat = clamp((snapshot["thermal"]["maxC"] - 30) / 25, 0, 1)
-    score = round(100 * (0.5 * person + 0.3 * prox + 0.2 * heat))
+    env_risk = env["score"] / 100 if env else 0
+    score = round(100 * (0.45 * person + 0.25 * prox + 0.15 * heat + 0.15 * env_risk))
     label = "Calme" if score < 30 else "Vigilance" if score < 60 else "Menace"
     return {"score": score, "label": label}
 
@@ -54,7 +63,15 @@ def _threat_score(snapshot: dict, detections: list[dict]) -> dict:
 class MockAnalyzer:
     name = "heuristique (mock)"
 
+    def __init__(self) -> None:
+        self._env = EnvDetector()
+
     def analyze(self, snapshot: dict) -> dict:
         time.sleep(random.uniform(0.15, 0.4))  # simule le temps de calcul d'un vrai modèle
         detections = _detect_person(snapshot)
-        return {"detections": detections, "threat": _threat_score(snapshot, detections)}
+        environment = self._env.update(snapshot.get("environment"))
+        return {
+            "detections": detections,
+            "threat": _threat_score(snapshot, detections, environment),
+            "environment": environment,
+        }

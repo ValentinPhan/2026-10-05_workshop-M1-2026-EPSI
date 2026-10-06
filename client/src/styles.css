@@ -10,6 +10,8 @@
   --c-ultra: #4fc3dc;
   --c-thermal: #f5894a;
   --c-threat: #ff5a5f;
+  --c-env-temp: #f5a524;
+  --c-env-hum: #6c8cff;
 }
 
 body { margin: 0; }

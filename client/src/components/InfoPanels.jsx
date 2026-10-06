@@ -71,6 +71,7 @@ export function AlertsPanel({ alerts, triggerScenario, mock }) {
           <Flex gap={8} wrap>
             <Button size="small" onClick={() => triggerScenario('intruder')}>Simuler un intrus</Button>
             <Button size="small" onClick={() => triggerScenario('heat')}>Simuler un pic thermique</Button>
+            <Button size="small" onClick={() => triggerScenario('window')}>Simuler une fenêtre ouverte</Button>
           </Flex>
         )
       }

@@ -7,6 +7,7 @@ import CameraPanel from './components/CameraPanel.jsx';
 import UltrasonicPanel from './components/UltrasonicPanel.jsx';
 import ThermalPanel from './components/ThermalPanel.jsx';
 import MotorPanel from './components/MotorPanel.jsx';
+import EnvironmentPanel from './components/EnvironmentPanel.jsx';
 import { ThreatPanel, SystemPanel, AlertsPanel } from './components/InfoPanels.jsx';
 
 const DETECTIONS_MAX_AGE_MS = 3000;
@@ -65,8 +66,9 @@ export default function App() {
             </Col>
             <Col xs={24} md={12} xl={8}><UltrasonicPanel ultrasonic={snapshot.ultrasonic} angle={snapshot.motor.angle} history={history} /></Col>
             <Col xs={24} md={12} xl={8}><ThermalPanel thermal={snapshot.thermal} history={history} /></Col>
-            <Col xs={24} xl={8}><MotorPanel motor={snapshot.motor} sendMotor={sendMotor} /></Col>
-            <Col span={24}><AlertsPanel alerts={alerts} triggerScenario={triggerScenario} mock={provider === 'mock'} /></Col>
+            <Col xs={24} md={12} xl={8}><EnvironmentPanel environment={snapshot.environment} analysis={analysis} history={history} /></Col>
+            <Col xs={24} md={12} xl={8}><MotorPanel motor={snapshot.motor} sendMotor={sendMotor} /></Col>
+            <Col xs={24} xl={16}><AlertsPanel alerts={alerts} triggerScenario={triggerScenario} mock={provider === 'mock'} /></Col>
           </Row>
         )}
       </Layout.Content>

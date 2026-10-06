@@ -4,6 +4,16 @@ const HISTORY_MAX = 120;
 const ALERTS_MAX = 50;
 const append = (arr, item) => [...arr, item].slice(-HISTORY_MAX);
 
+// Point d'historique compact (même forme que _sensor_point dans backend/app/hub.py)
+const sensorPoint = (s) => ({
+  ts: s.ts,
+  distanceCm: s.ultrasonic.distanceCm,
+  avgC: s.thermal.avgC,
+  maxC: s.thermal.maxC,
+  envTempC: s.environment?.tempC ?? null,
+  humidityPct: s.environment?.humidityPct ?? null,
+});
+
 // Connexion WebSocket (reconnexion auto) + état global du dashboard.
 // Deux flux indépendants : `snapshot` (donnée brute, chaque seconde) et
 // `analysis` (résultat du modèle IA, qui arrive en différé).
@@ -45,7 +55,7 @@ export function useSentinel() {
           case 'snapshot': {
             const s = msg.data;
             setSnapshot(s);
-            setHistory((h) => append(h, { ts: s.ts, distanceCm: s.ultrasonic.distanceCm, avgC: s.thermal.avgC, maxC: s.thermal.maxC }));
+            setHistory((h) => append(h, sensorPoint(s)));
             break;
           }
           case 'analysis':
