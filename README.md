@@ -26,22 +26,34 @@ Deux modes, selon la variable `ANALYZER` :
 ```
 backend/            API FastAPI + vision YOLO  (tourne sur le PC)
   app/
-    main.py         routes REST + WebSocket (/ws, /ws/video)
+    main.py         routes REST + WebSocket (/ws, /ws/video, /ws/camera)
     hub.py          état, diffusion WebSocket, chemins rapide / lent / vidéo
     auth.py         comptes, sessions, rôles admin / agent, limitation des tentatives
     db.py           base de données (SQLite par défaut, PostgreSQL via DATABASE_URL)
     cli.py          gestion des comptes en ligne de commande (mot de passe perdu)
     alerts.py       moteur d'alertes
     config.py       seuils et variables d'environnement
+    console.py      couleurs ANSI des messages de statut dans le terminal
     providers/      sources de données du Pi : mock.py · ssh.py (à implémenter) · motor.py
     vision/         caméra + YOLO dans un thread dédié : service.py · detector.py
     ai/             analyse : mock_analyzer.py · local_analyzer.py · threat.py · env_anomaly.py
   models/           poids des modèles (yolov8n.pt, yolo26n.pt)
-  data/captures/    photos d'intrusion (générées, non versionnées)
+  data/             base SQLite et photos d'intrusion (générées, non versionnées)
+  .env.example      modèle de configuration (copier en .env)
+  requirements.txt · requirements-vision.txt   dépendances de l'API · de la vision YOLO
 frontend/           dashboard React / Vite / Ant Design  (navigateur)
-raspberry-pi/       scripts qui tournent sur le Raspberry (lecture du DHT22)
+  src/
+    App.jsx · Dashboard.jsx · api.js   point d'entrée, page principale, appels REST
+    components/     un panneau par capteur (Camera, Ultrasonic, Thermal, Motor, Environment),
+                    InfoPanels, UsersPanel, LoginPage, drawOverlay.js, ui.jsx
+    hooks/          useSentinel (WebSocket), useAuth, useVideoStream, useWebcamUpload
+raspberry-pi/       scripts qui tournent sur le Raspberry
+  dht22_reader.py   lecture du DHT22 (une ligne JSON par mesure)
+  camera_push.py    envoie les images de la caméra au backend (WebSocket /ws/camera)
 ml/                 atelier de l'équipe IA, hors ligne : vision/ (tests YOLO) · environment/ (Isolation Forest DHT22)
+scripts/            run-api.mjs : lance l'API avec le Python du venv (backend/.venv)
 .vscode/            F5 : lance back + front
+.claude/            contexte du projet pour Claude Code (voir .claude/README.md)
 ```
 
 ## Installation
