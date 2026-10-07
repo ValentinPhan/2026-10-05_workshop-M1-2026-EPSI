@@ -20,7 +20,6 @@ Deux modes, selon la variable `ANALYZER` :
 | Micro-servomoteur SG90 | oriente le capteur ultrason (radar) |
 | Capteur température / humidité DHT22 | données d'environnement (module « V182 », 3 broches) |
 | Capteur ultrason | mesure de distance (alerte de proximité) |
-| Module ESP32 | microcontrôleur additionnel (rôle à préciser) |
 
 ## Structure du dépôt
 
