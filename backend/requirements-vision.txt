@@ -1,3 +1,4 @@
 # Vision temps réel (ANALYZER=local) : YOLOv8 + OpenCV. Installe aussi torch (lourd, ~1 Go).
 # À installer en plus de requirements.txt :  pip install -r requirements-vision.txt
 ultralytics>=8.3
+av>=14  # enregistrement vidéo H.264 des intrusions (FFmpeg embarqué)

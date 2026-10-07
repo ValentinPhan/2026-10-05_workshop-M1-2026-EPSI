@@ -22,7 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .ai import create_analyzer
 from .ai.threat import threat_score
 from .auth import COOKIE, bootstrap_admin, current_user, device_token_ok, require_admin, router as auth_router, websocket_user
-from .config import CAPTURES_DIR, LOG_DIR, config
+from .config import CAPTURES_DIR, LOG_DIR, VIDEOS_DIR, config
 from .db import database
 from .hub import Hub
 from .logger import logger
@@ -138,6 +138,22 @@ async def history(_user: dict = Depends(current_user)):
 @app.get("/api/alerts")
 async def alerts(_user: dict = Depends(current_user)):
     return hub.alerts.list()
+
+
+@app.get("/api/videos")
+def videos(_user: dict = Depends(current_user)):
+    """Clips vidéo des intrusions, du plus récent au plus ancien (nom, taille, date, lien)."""
+    files = sorted(VIDEOS_DIR.glob("intrusion_*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True) if VIDEOS_DIR.is_dir() else []
+    return [{"name": p.name, "bytes": p.stat().st_size, "modifiedMs": int(p.stat().st_mtime * 1000), "url": f"/api/videos/{p.name}"} for p in files]
+
+
+@app.get("/api/videos/{name}")
+def video(name: str, _user: dict = Depends(current_user)):
+    """Un clip vidéo (MP4 H.264, lecture progressive avec Range). Réservé aux comptes connectés."""
+    path = VIDEOS_DIR / name
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+\.mp4", name) or not path.is_file():
+        return error(404, "Vidéo introuvable")
+    return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.get("/api/modules")

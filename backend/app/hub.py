@@ -211,6 +211,14 @@ class Hub:
                 "peakPersons": started["peakPersons"], "photos": started["photos"]} if started else {}),
         )
 
+    def _on_clip(self, info: dict) -> None:
+        """Un clip vidéo d'intrusion est terminé : trace dans le journal (fichier, poids, durée, qualité)."""
+        recovered = info.get("recovered", False)
+        what = "Clip vidéo récupéré après un arrêt brutal" if recovered else "Clip vidéo de l'intrusion enregistré"
+        text = f"{what} ({info['durationS']} s, {info['bytes'] / 1024:.0f} Ko)"
+        (log.warning if recovered else log.info)(green(f"{text} : {info['name']}"))
+        logger.emit("vision.clip", text, level="warning" if recovered else "info", **{**info, "recovered": recovered})
+
     def _on_vision_status(self, status: dict) -> None:
         log_fn = log.warning if status["state"] == "error" else log.info
         log_fn("vision : %s%s", status["state"], f" — {status['error']}" if status.get("error") else "")
@@ -354,6 +362,7 @@ class Hub:
                 on_intrusion=lambda event: self._from_vision_thread(self._on_intrusion, event),
                 on_intrusion_end=lambda: self._from_vision_thread(self._on_intrusion_end),
                 on_status=lambda status: self._from_vision_thread(self._on_vision_status, status),
+                on_clip=lambda info: self._from_vision_thread(self._on_clip, info),
             )
 
     async def stop(self) -> None:

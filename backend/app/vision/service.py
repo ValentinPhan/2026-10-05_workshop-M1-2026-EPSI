@@ -7,6 +7,7 @@ vers le hub, depuis son thread :
   - on_intrusion(event)  début d'une intrusion, ou personne de plus dans une intrusion en cours
                          (`event["event"]` = "intrusion" | "new_person"), avec la photo enregistrée dans CAPTURES_DIR
   - on_intrusion_end()   fin d'une intrusion (plus de détection depuis `intrusion_timeout_s`)
+  - on_clip(info)        clip vidéo H.264 terminé (voir recorder.py : de la première détection à la fin de l'intrusion)
   - on_status(status)    changement d'état du service (chargement, en marche, attente, erreur...)
 
 Deux sources d'images, commutables à chaud :
@@ -29,6 +30,7 @@ from pathlib import Path
 
 from ..config import VisionConfig
 from .detector import YoloDetector
+from .recorder import ClipRecorder
 
 log = logging.getLogger("sentinel-x.vision")
 
@@ -57,7 +59,8 @@ class _FpsMeter:
 
 
 class VisionService:
-    def __init__(self, cfg: VisionConfig, models_dir: Path, captures_dir: Path | None):  # None : photos désactivées (dev)
+    def __init__(self, cfg: VisionConfig, models_dir: Path, captures_dir: Path | None, videos_dir: Path | None = None):
+        # captures_dir / videos_dir à None : photos / clips désactivés (dev)
         self._cfg = cfg
         self._models_dir = models_dir
         self._captures_dir = captures_dir
@@ -88,10 +91,19 @@ class VisionService:
         self._pending_hits = 0  # images vues pendant cette latence
         self._best: tuple | None = None  # (image, détections) montrant le plus de personnes pendant la latence
         self._cb: dict = {}
+        self._recorder = ClipRecorder(
+            videos_dir, lambda info: self._cb.get("clip", lambda _info: None)(info), preroll_s=cfg.record_preroll_s,
+            max_s=cfg.record_max_s, crf=cfg.record_crf, max_width=cfg.record_max_width, keep_mb=cfg.record_keep_mb,
+        )
 
     # ---- API publique (appelée depuis le thread de l'API) ----
-    def start(self, on_frame, on_intrusion, on_intrusion_end, on_status) -> None:
-        self._cb = {"frame": on_frame, "intrusion": on_intrusion, "intrusion_end": on_intrusion_end, "status": on_status}
+    def start(self, on_frame, on_intrusion, on_intrusion_end, on_status, on_clip=None) -> None:
+        self._cb = {
+            "frame": on_frame, "intrusion": on_intrusion, "intrusion_end": on_intrusion_end, "status": on_status,
+            "clip": on_clip or (lambda _info: None),
+        }
+        for info in self._recorder.recover():  # clips laissés par un plantage précédent
+            self._cb["clip"](info)
         self._thread = threading.Thread(target=self._run, name="vision", daemon=True)
         self._thread.start()
 
@@ -101,6 +113,7 @@ class VisionService:
             self._cond.notify_all()
         if self._thread:
             self._thread.join(timeout=5)
+        self._recorder.stop(time.time(), keep=True)  # arrêt normal : le clip en cours est fermé proprement
 
     def status(self) -> dict:
         with self._lock:
@@ -255,6 +268,7 @@ class VisionService:
     def _process(self, cv2, detector, frame) -> None:
         """Une image : YOLO, mise à jour des détections et de l'intrusion, envoi de l'image et de ses résultats."""
         detections, annotated = detector.detect(frame, annotate=self._cfg.annotate)
+        self._recorder.push(frame, time.time())  # tampon de pré-enregistrement + clip en cours
         with self._lock:
             self._latest = {"ts": time.time(), "detections": detections}
         self._update_intrusion(detections, frame, cv2)
@@ -290,6 +304,8 @@ class VisionService:
         count = len(detections)
         if count:
             self._last_seen = now
+            if not self._intrusion_active:
+                self._recorder.start(now)  # le clip démarre à la première détection
             self._intrusion_active = True
             if count >= self._level:
                 self._level_seen = now
@@ -362,6 +378,7 @@ class VisionService:
 
     def _end_intrusion(self) -> None:
         was_alerted = self._alerted
+        self._recorder.stop(time.time(), keep=was_alerted)  # détection non confirmée (bruit) : le clip est supprimé
         self._intrusion_active = self._alerted = False
         self._level = 0
         self._pending_since = self._best = None

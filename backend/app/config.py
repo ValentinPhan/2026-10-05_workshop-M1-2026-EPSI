@@ -22,6 +22,7 @@ _load_dotenv()  # avant les valeurs par défaut ci-dessous, qui lisent os.enviro
 
 MODELS_DIR = BACKEND_DIR / "models"  # poids des modèles (YOLO, ...)
 CAPTURES_DIR = Path(os.environ.get("CAPTURES_DIR", BACKEND_DIR / "data" / "captures"))  # photos d'intrusion
+VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", BACKEND_DIR / "data" / "videos"))  # clips vidéo des intrusions
 LOG_DIR = Path(os.environ.get("LOG_DIR", BACKEND_DIR / "data" / "logs"))  # journal JSON des événements (voir logger.py)
 
 
@@ -71,6 +72,13 @@ class VisionConfig:
     capture_max_width: int = int(_num("CAPTURE_MAX_WIDTH", 640))
     capture_jpeg_quality: int = int(_num("CAPTURE_JPEG_QUALITY", 70))
     zone: str = os.environ.get("VISION_ZONE", "camera_1")
+    # Clip vidéo H.264 par intrusion (voir vision/recorder.py). auto = activé en prod, désactivé en dev ; 1 / 0 pour forcer.
+    record_video: str = os.environ.get("RECORD_VIDEO", "auto").strip().lower()
+    record_preroll_s: float = _num("RECORD_PREROLL_S", 2)  # secondes avant la détection incluses dans le clip
+    record_max_s: float = _num("RECORD_MAX_S", 180)  # un clip plus long est coupé en parties
+    record_crf: int = int(_num("RECORD_CRF", 28))  # qualité H.264 : plus bas = meilleure qualité, plus lourd (23 à 32)
+    record_max_width: int = int(_num("RECORD_MAX_WIDTH", 640))
+    record_keep_mb: float = _num("RECORD_KEEP_MB", 1000)  # quota du dossier : les plus anciens clips sont supprimés
 
 
 @dataclass(frozen=True)
