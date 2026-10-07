@@ -12,6 +12,8 @@ from sqlalchemy import BigInteger, Index, Integer, String, Text, create_engine, 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
+from .logger import logger
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
@@ -178,6 +180,11 @@ class Database:
         with self._session() as s:
             s.add(AuditRow(ts=_now_ms(), username=username, action=action, detail=detail[:2000]))
             s.commit()
+        # même trace dans le journal JSON (avec l'état complet de l'application)
+        logger.emit(
+            f"audit.{action}", f"{username or 'système'} : {action} {detail}".strip(),
+            level="warning" if action.endswith("_failed") else "info", actor=username, detail=detail,
+        )
 
     def recent_audit(self, limit: int) -> list[dict]:
         with self._session() as s:

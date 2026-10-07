@@ -11,6 +11,7 @@ import json
 import logging
 import re
 from contextlib import asynccontextmanager
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import Body, Depends, FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -21,13 +22,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from .ai import create_analyzer
 from .ai.threat import threat_score
 from .auth import COOKIE, bootstrap_admin, current_user, device_token_ok, require_admin, router as auth_router, websocket_user
-from .config import CAPTURES_DIR, config
+from .config import CAPTURES_DIR, LOG_DIR, config
 from .db import database
 from .hub import Hub
+from .logger import logger
 from .providers import create_provider
 from .vision import create_vision
 
-logging.basicConfig(level=logging.INFO, format="[%(name)s] %(message)s")
+logger.setup()  # console + journal JSON (backend/data/logs/), voir logger.py
 
 database.init()  # crée les tables si besoin (SQLite : un fichier ; PostgreSQL : DATABASE_URL)
 provider = create_provider(config)
@@ -41,14 +43,24 @@ async def lifespan(_app: FastAPI):
     await asyncio.to_thread(bootstrap_admin)
     await hub.start()
     logging.getLogger("sentinel-x").info(
-        "provider: %s, analyse: %s, vision: %s, base: %s, tick %d ms",
+        "env: %s%s, provider: %s, analyse: %s, vision: %s, base: %s, tick %d ms",
+        config.env,
+        " (photos d'intrusion désactivées)" if config.env == "dev" else "",
         provider.name,
         analyzer.name,
         f"YOLO sur {config.vision.source}" if vision else "off",
         database.dialect,
         config.tick_ms,
     )
+    logger.emit(
+        "app.start", f"Sentinel-X démarré (env {config.env})",
+        env=config.env, provider=provider.name, analyzer=analyzer.name, database=database.dialect, tickMs=config.tick_ms,
+        vision={"enabled": bool(vision), "source": config.vision.source, "model": config.vision.model, "imgsz": config.vision.imgsz},
+        thresholds=asdict(config.thresholds),
+        photosEnabled=config.env == "prod", logDir=str(LOG_DIR),
+    )
     yield
+    logger.emit("app.stop", "Sentinel-X arrêté")
     await hub.stop()
 
 
@@ -61,9 +73,26 @@ def error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
 
+def _peer(conn) -> str | None:
+    return conn.client.host if conn.client else None
+
+
 @app.exception_handler(StarletteHTTPException)
-async def http_error(_request: Request, exc: StarletteHTTPException):
+async def http_error(request: Request, exc: StarletteHTTPException):
+    # accès refusés et erreurs serveur sont journalisés (404 et le 401 de /api/auth/me au chargement : trop bruyants)
+    if exc.status_code in (401, 403, 429) and request.url.path != "/api/auth/me" or exc.status_code >= 500:
+        logger.emit(
+            "http.denied" if exc.status_code < 500 else "http.error", f"{request.method} {request.url.path} → {exc.status_code}",
+            level="warning" if exc.status_code < 500 else "error",
+            method=request.method, path=request.url.path, status=exc.status_code, detail=str(exc.detail), ip=_peer(request),
+        )
     return error(exc.status_code, str(exc.detail))
+
+
+@app.exception_handler(Exception)
+async def unhandled_error(request: Request, exc: Exception):
+    logging.getLogger("sentinel-x").error("exception non gérée sur %s %s", request.method, request.url.path, exc_info=exc)
+    return error(500, "Erreur interne")
 
 
 @app.exception_handler(RequestValidationError)
@@ -111,6 +140,12 @@ async def alerts(_user: dict = Depends(current_user)):
     return hub.alerts.list()
 
 
+@app.get("/api/modules")
+async def modules(_user: dict = Depends(current_user)):
+    """Santé de chaque module : state = ok | lost | unknown, depuis quand, dernière fois ok, raison."""
+    return hub.monitor.states()
+
+
 @app.get("/api/captures/{name}")
 def capture(name: str, _user: dict = Depends(current_user)):
     """Photo d'intrusion. Réservée aux comptes connectés (un montage de fichiers statiques n'aurait aucun contrôle)."""
@@ -141,6 +176,7 @@ async def vision_source(body: Any = Body(None), admin: dict = Depends(require_ad
     if mode not in ("browser", "default"):
         return error(400, "mode attendu : 'browser' ou 'default'")
     status = vision.set_push_mode(mode == "browser")
+    hub.monitor.reset_camera()  # changement voulu : l'attente d'images qui suit n'est pas une perte de connexion
     await audit(admin, "vision_source", mode)
     return status
 
@@ -184,6 +220,10 @@ async def mock_scenario(scenario: str, admin: dict = Depends(require_admin)):
 # ---- WebSocket ----
 async def _refuse(ws: WebSocket, code: int = 4401) -> None:
     """Refus après la poignée de main (le navigateur reçoit ainsi un vrai code de fermeture : 4401 = non connecté)."""
+    logger.emit(
+        "ws.refused", f"Connexion refusée sur {ws.url.path} (code {code})", level="warning",
+        path=ws.url.path, code=code, ip=_peer(ws),
+    )
     await ws.accept()
     await ws.close(code=code)
 
@@ -191,9 +231,11 @@ async def _refuse(ws: WebSocket, code: int = 4401) -> None:
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
     """Événements : hello, snapshot, analysis, alert, motor, vision (JSON). Compte connecté requis."""
-    if await websocket_user(ws) is None:
+    user = await websocket_user(ws)
+    if user is None:
         return await _refuse(ws)
     await hub.connect(ws, ws.cookies.get(COOKIE))
+    logger.emit("ws.connect", f"{user['username']} connecté au flux de données", channel="/ws", user=user["username"], role=user["role"], ip=_peer(ws))
     try:
         while True:
             await ws.receive_text()  # le front n'envoie rien ; on détecte juste la déconnexion
@@ -201,6 +243,7 @@ async def ws_endpoint(ws: WebSocket):
         pass
     finally:
         hub.disconnect(ws)
+        logger.emit("ws.disconnect", f"{user['username']} déconnecté du flux de données", channel="/ws", user=user["username"], ip=_peer(ws))
 
 
 @app.websocket("/ws/camera")
@@ -214,6 +257,9 @@ async def ws_camera_endpoint(ws: WebSocket):
     if vision is None:
         await ws.close(code=1008, reason="Vision désactivée : lancer avec ANALYZER=local")
         return
+    origin = f"admin {user['username']}" if user and user["role"] == "admin" else "appareil (jeton)"
+    logger.emit("camera.push_connect", f"Envoi d'images ouvert par {origin}", channel="/ws/camera", origin=origin, ip=_peer(ws))
+    frames = 0
     try:
         while True:
             message = await ws.receive()
@@ -221,16 +267,21 @@ async def ws_camera_endpoint(ws: WebSocket):
                 break
             if message.get("bytes"):
                 vision.push_frame(message["bytes"])
+                frames += 1
     except WebSocketDisconnect:
         pass
+    finally:
+        logger.emit("camera.push_disconnect", f"Envoi d'images fermé ({frames} images reçues)", channel="/ws/camera", origin=origin, frames=frames, ip=_peer(ws))
 
 
 @app.websocket("/ws/video")
 async def ws_video_endpoint(ws: WebSocket):
     """Vidéo : une image + ses résultats YOLO par message binaire, format décrit dans hub.py. Compte connecté requis."""
-    if await websocket_user(ws) is None:
+    user = await websocket_user(ws)
+    if user is None:
         return await _refuse(ws)
     client = await hub.connect_video(ws, ws.cookies.get(COOKIE))
+    logger.emit("ws.connect", f"{user['username']} connecté au flux vidéo", channel="/ws/video", user=user["username"], role=user["role"], ip=_peer(ws))
     try:
         while True:
             await ws.receive_text()
@@ -238,3 +289,4 @@ async def ws_video_endpoint(ws: WebSocket):
         pass
     finally:
         hub.disconnect_video(client)
+        logger.emit("ws.disconnect", f"{user['username']} déconnecté du flux vidéo", channel="/ws/video", user=user["username"], ip=_peer(ws))

@@ -57,7 +57,7 @@ class _FpsMeter:
 
 
 class VisionService:
-    def __init__(self, cfg: VisionConfig, models_dir: Path, captures_dir: Path):
+    def __init__(self, cfg: VisionConfig, models_dir: Path, captures_dir: Path | None):  # None : photos désactivées (dev)
         self._cfg = cfg
         self._models_dir = models_dir
         self._captures_dir = captures_dir
@@ -320,21 +320,29 @@ class VisionService:
         self._capture(frame, detections, kind, now, cv2)
 
     def _capture(self, frame, detections: list[dict], kind: str, now: float, cv2) -> None:
-        """Enregistre l'image brute dans CAPTURES_DIR et prévient le hub (alerte avec la photo)."""
-        self._captures_dir.mkdir(parents=True, exist_ok=True)
+        """Enregistre l'image brute dans CAPTURES_DIR et prévient le hub (alerte avec la photo, sauf en dev)."""
         count = len(detections)
-        name = f"intrusion_{datetime.now():%Y%m%d_%H%M%S_%f}"[:-3] + f"_{count}p.jpg"  # millisecondes : pas de collision
-        (self._captures_dir / name).write_bytes(self._compress_capture(frame, cv2))
-        self._cb["intrusion"](
-            {
-                "ts": int(now * 1000),
-                "event": kind,  # "intrusion" (début) ou "new_person" (une personne de plus)
-                "confidence": max(d["confidence"] for d in detections),
-                "personCount": count,
-                "zone": self._cfg.zone,
-                "snapshot": f"/api/captures/{name}",
-            }
-        )
+        event = {
+            "ts": int(now * 1000),
+            "event": kind,  # "intrusion" (début) ou "new_person" (une personne de plus)
+            "confidence": max(d["confidence"] for d in detections),
+            "personCount": count,
+            "zone": self._cfg.zone,
+            # informations pour le journal JSON (ignorées par le moteur d'alertes)
+            "detections": [{k: v for k, v in d.items() if k != "polygon"} for d in detections],  # sans les silhouettes
+            "frame": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
+            "model": self._cfg.model,
+            "source": self._cfg.source,
+        }
+        if self._captures_dir is not None:
+            self._captures_dir.mkdir(parents=True, exist_ok=True)
+            name = f"intrusion_{datetime.now():%Y%m%d_%H%M%S_%f}"[:-3] + f"_{count}p.jpg"  # millisecondes : pas de collision
+            data = self._compress_capture(frame, cv2)
+            (self._captures_dir / name).write_bytes(data)
+            event["snapshot"] = f"/api/captures/{name}"
+            event["snapshotFile"] = str(self._captures_dir / name)
+            event["snapshotBytes"] = len(data)
+        self._cb["intrusion"](event)
 
     def _compress_capture(self, frame, cv2) -> bytes:
         """Photo légère : réduite à `capture_max_width`, JPEG de qualité réduite, tables optimisées, progressif."""

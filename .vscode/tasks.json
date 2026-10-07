@@ -3,6 +3,9 @@
   "options": {
     "shell": { "executable": "cmd.exe", "args": ["/d", "/c"] }
   },
+  "inputs": [
+    { "id": "terminateFront", "type": "command", "command": "workbench.action.tasks.terminate", "args": "Front (Vite)" }
+  ],
   "tasks": [
     {
       "label": "Front (Vite)",
@@ -18,6 +21,15 @@
         "pattern": { "regexp": "^$" },
         "background": { "activeOnStart": true, "beginsPattern": "VITE", "endsPattern": "Attente de l'API|ready in" }
       }
+    },
+    {
+      // postDebugTask de F5 : VS Code n'arrête pas tout seul une preLaunchTask en arrière-plan (Vite resterait
+      // ouvert avec son carré rouge). Cette tâche la termine quand la session de debug s'arrête.
+      "label": "Arrêter le front",
+      "type": "shell",
+      "command": "echo ${input:terminateFront}",
+      "presentation": { "reveal": "never", "close": true },
+      "problemMatcher": []
     },
     {
       "label": "Back (API Python)",

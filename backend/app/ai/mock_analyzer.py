@@ -16,7 +16,9 @@ EMPTY_DISTANCE_CM = 300  # distance mesurée quand la pièce est vide
 
 
 def _detect_person(snapshot: dict) -> list[dict]:
-    thermal, distance = snapshot["thermal"], snapshot["ultrasonic"]["distanceCm"]
+    thermal, distance = snapshot.get("thermal"), (snapshot.get("ultrasonic") or {}).get("distanceCm")
+    if not thermal or distance is None:  # capteur muet (voir modules.py) : rien à analyser
+        return []
     # Ambiante : mesure du DHT22 si disponible (fiable même si une personne remplit le champ),
     # sinon médiane de la matrice. +1 °C : la matrice lit un peu plus chaud que l'air (murs, objets).
     env_temp = (snapshot.get("environment") or {}).get("tempC")

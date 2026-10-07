@@ -8,7 +8,11 @@ Une alerte est émise au passage "condition fausse -> vraie" (pas à chaque tick
 Avec le service de vision (ANALYZER=local), l'intrusion vient directement de ses événements
 (intrusion_started / intrusion_ended : immédiat, avec la photo) et non du résultat d'analyse en différé.
 """
+import time
+
 from .config import Thresholds
+from .logger import logger
+from .modules import CRITICAL, LABELS
 
 
 class AlertEngine:
@@ -22,6 +26,10 @@ class AlertEngine:
         self._alerts: list[dict] = list(initial or [])[:size]
         self._active: set[str] = set()
         self._next_id = max((a["id"] for a in initial or []), default=0) + 1
+
+    def active(self) -> list[str]:
+        """Clés des alertes dont la condition est toujours vraie."""
+        return sorted(self._active)
 
     def _add(self, ts: int, level: str, key: str, message: str, **extra) -> dict:
         alert = {"id": self._next_id, "ts": ts, "level": level, "key": key, "message": message, **extra}
@@ -37,6 +45,8 @@ class AlertEngine:
                 self._active.add(rule["key"])
                 created.append(self._add(ts, rule["level"], rule["key"], rule["message"]))
             elif not rule["on"]:
+                if rule["key"] in self._active:
+                    logger.emit("alert.resolved", f"Fin de l'alerte « {rule['key']} »", key=rule["key"], alertLevel=rule["level"])
                 self._active.discard(rule["key"])
         return created
 
@@ -49,30 +59,47 @@ class AlertEngine:
             message = f"Nouvelle personne détectée ({n} au total, {confidence} %)"
         else:
             message = f"Intrusion détectée par la caméra ({n} personne{'s' if n > 1 else ''}, {confidence} %)"
-        return self._add(event["ts"], "critical", "intrusion", message, snapshot=event["snapshot"])
+        extra = {"snapshot": event["snapshot"]} if event.get("snapshot") else {}  # pas de photo en mode dev
+        return self._add(event["ts"], "critical", "intrusion", message, **extra)
+
+    def evaluate_modules(self, states: dict[str, dict]) -> list[dict]:
+        """Une alerte « perte de connexion » par module dont l'état est « lost » (retirée quand il revient)."""
+        return self._run(
+            [
+                {
+                    "key": f"module_{name}",
+                    "level": "critical" if name in CRITICAL else "warning",
+                    "on": state["state"] == "lost",
+                    "message": f"Perte de connexion : {LABELS[name]} ({state['reason']})",
+                }
+                for name, state in states.items()
+            ],
+            int(time.time() * 1000),
+        )
 
     def intrusion_ended(self) -> None:
         self._active.discard("intrusion")
 
     def evaluate_sensors(self, s: dict) -> list[dict]:
-        distance, max_c = s["ultrasonic"]["distanceCm"], s["thermal"]["maxC"]
-        return self._run(
-            [
-                {
-                    "key": "proximity",
-                    "level": "warning",
-                    "on": distance < self._th.proximity_cm,
-                    "message": f"Objet à {round(distance)} cm du capteur ultrason",
-                },
-                {
-                    "key": "heat",
-                    "level": "warning",
-                    "on": max_c > self._th.heat_max_c,
-                    "message": f"Pic thermique : {max_c} °C (seuil {self._th.heat_max_c:g} °C)",
-                },
-            ],
-            s["ts"],
-        )
+        distance = (s.get("ultrasonic") or {}).get("distanceCm")
+        max_c = (s.get("thermal") or {}).get("maxC")
+        rules = []
+        # capteur muet : pas de règle (l'alerte en cours reste telle quelle, la perte est signalée par modules.py)
+        if distance is not None:
+            rules.append({
+                "key": "proximity",
+                "level": "warning",
+                "on": distance < self._th.proximity_cm,
+                "message": f"Objet à {round(distance)} cm du capteur ultrason",
+            })
+        if max_c is not None:
+            rules.append({
+                "key": "heat",
+                "level": "warning",
+                "on": max_c > self._th.heat_max_c,
+                "message": f"Pic thermique : {max_c} °C (seuil {self._th.heat_max_c:g} °C)",
+            })
+        return self._run(rules, s["ts"])
 
     def evaluate_analysis(self, a: dict) -> list[dict]:
         # Modèle indisponible : on ne touche pas aux alertes IA, rien n'est analysé.

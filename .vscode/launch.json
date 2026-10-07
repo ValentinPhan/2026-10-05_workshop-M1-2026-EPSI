@@ -16,7 +16,8 @@
       "env": { "ANALYZER": "local", "VISION_SOURCE": "browser", "YOLO_MODEL": "yolov8n-seg.pt", "YOLO_IMGSZ": "480" },
       "console": "integratedTerminal",
       "justMyCode": true,
-      "preLaunchTask": "Front (Vite)"
+      "preLaunchTask": "Front (Vite)",
+      "postDebugTask": "Arrêter le front"
     },
     {
       // Caméra du RASPBERRY : le Pi envoie ses images JPEG en WebSocket (raspberry-pi/camera_push.py --url
@@ -31,7 +32,8 @@
       "env": { "ANALYZER": "local", "VISION_SOURCE": "push", "YOLO_MODEL": "yolov8n-seg.pt", "YOLO_IMGSZ": "480" },
       "console": "integratedTerminal",
       "justMyCode": true,
-      "preLaunchTask": "Front (Vite)"
+      "preLaunchTask": "Front (Vite)",
+      "postDebugTask": "Arrêter le front"
     },
     {
       // Données simulées, sans YOLO ni caméra : le panneau Caméra affiche un faux flux.
@@ -44,7 +46,8 @@
       "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
       "console": "integratedTerminal",
       "justMyCode": true,
-      "preLaunchTask": "Front (Vite)"
+      "preLaunchTask": "Front (Vite)",
+      "postDebugTask": "Arrêter le front"
     },
     {
       // YOLO sur une caméra branchée à la machine du backend (webcam du PC) ou sur un flux réseau
@@ -59,7 +62,8 @@
       "env": { "ANALYZER": "local", "VISION_SOURCE": "0", "YOLO_MODEL": "yolov8n-seg.pt", "YOLO_IMGSZ": "480" },
       "console": "integratedTerminal",
       "justMyCode": true,
-      "preLaunchTask": "Front (Vite)"
+      "preLaunchTask": "Front (Vite)",
+      "postDebugTask": "Arrêter le front"
     }
   ]
 }

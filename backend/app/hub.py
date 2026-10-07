@@ -25,6 +25,8 @@ from .alerts import AlertEngine
 from .auth import user_from_token
 from .config import Config
 from .console import green, red
+from .logger import logger
+from .modules import ModuleMonitor
 
 log = logging.getLogger("sentinel-x")
 
@@ -36,16 +38,18 @@ def _now_ms() -> int:
 def _sensor_point(raw: dict) -> dict:
     """Point d'historique compact (même forme que sensorPoint dans frontend/src/hooks/useSentinel.js)."""
     env = raw.get("environment") or {}
+    ultrasonic, thermal = raw.get("ultrasonic") or {}, raw.get("thermal") or {}  # un capteur muet donne des None
     return {
         "ts": raw["ts"],
-        "distanceCm": raw["ultrasonic"]["distanceCm"],
-        "avgC": raw["thermal"]["avgC"],
-        "maxC": raw["thermal"]["maxC"],
+        "distanceCm": ultrasonic.get("distanceCm"),
+        "avgC": thermal.get("avgC"),
+        "maxC": thermal.get("maxC"),
         "envTempC": env.get("tempC"),
         "humidityPct": env.get("humidityPct"),
     }
 
 
+MODULE_CHECK_S = 1  # fréquence de la surveillance des modules (voir modules.py)
 SESSION_CHECK_S = 15  # les WebSocket ouvertes sont revérifiées à cet intervalle (session fermée, compte supprimé...)
 
 
@@ -78,6 +82,26 @@ class Hub:
         self._video_clients: set[VideoClient] = set()
         self._sweeper: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._last_snapshot_ms: int | None = None  # dernier snapshot reçu du Pi (pour détecter sa perte)
+        self.monitor = ModuleMonitor(config.module_timeout_s, config.dht_stale_s, _now_ms())
+        self._watchdog: asyncio.Task | None = None
+        self._monitor_task: asyncio.Task | None = None
+        self._monitor_interval_s = config.monitor_interval_s
+        self._intrusion: dict | None = None  # intrusion en cours : début, pic de personnes, nombre de photos
+        logger.set_context(self.context)  # chaque ligne du journal JSON embarque cet état complet
+
+    def context(self) -> dict:
+        """État complet de l'application, joint à chaque événement du journal (voir logger.py)."""
+        return {
+            "provider": self.provider.name,
+            "analyzer": self.analyzer.name,
+            "sensors": self.latest,  # dernier snapshot du Pi : ultrason, thermique, environnement, moteur, système, caméra
+            "analysis": self.analysis,  # dernière analyse IA : menace, anomalies d'environnement, détections
+            "vision": self.vision_status(),
+            "activeAlerts": self.alerts.active(),
+            "modules": self.monitor.states(),  # santé de chaque module (ok / lost / unknown, depuis quand, pourquoi)
+            "clients": {"events": len(self._clients), "video": len(self._video_clients)},
+        }
 
     # ---- WebSocket événements (/ws) ----
     async def connect(self, ws: WebSocket, token: str | None = None) -> None:
@@ -123,6 +147,7 @@ class Hub:
             except Exception as err:  # noqa: BLE001 — une base en panne ne doit pas couper les alertes en direct
                 log.warning(red(f"alerte non enregistrée en base : {err}"))
         for alert in created:
+            logger.emit("alert.created", alert["message"], level=alert["level"], alert=alert)
             await self.broadcast({"type": "alert", "data": alert})
 
     # ---- WebSocket vidéo (/ws/video) : images JPEG annotées, en binaire ----
@@ -163,21 +188,39 @@ class Hub:
     def _on_intrusion(self, event: dict) -> None:
         alert = self.alerts.intrusion_started(event)
         title = "NOUVELLE PERSONNE" if event.get("event") == "new_person" else "INTRUSION"
-        log.info(red(f"{title} détectée ({event['personCount']} personne(s), {round(event['confidence'] * 100)} %) — photo {event['snapshot']}"))
+        if self._intrusion is None or event.get("event") != "new_person":
+            self._intrusion = {"startedMs": event["ts"], "peakPersons": 0, "photos": 0}
+        self._intrusion["peakPersons"] = max(self._intrusion["peakPersons"], event["personCount"])
+        self._intrusion["photos"] += 1 if event.get("snapshot") else 0
+        logger.emit(
+            f"vision.{event.get('event', 'intrusion')}", f"{title} détectée ({event['personCount']} personne(s))",
+            level="critical", alertId=alert["id"], snapshotSaved=bool(event.get("snapshot")),
+            **{k: v for k, v in event.items() if k != "event"},  # `event` est le nom de l'événement (déjà dans la ligne)
+        )
+        photo = f"photo {event['snapshot']}" if event.get("snapshot") else "mode dev activé : capture d'écran désactivée"
+        log.info(red(f"{title} détectée ({event['personCount']} personne(s), {round(event['confidence'] * 100)} %) — {photo}"))
         asyncio.create_task(self._broadcast_alerts([alert]))
 
     def _on_intrusion_end(self) -> None:
         self.alerts.intrusion_ended()
         log.info(green("intrusion terminée"))
+        started, self._intrusion = self._intrusion, None
+        logger.emit(
+            "vision.intrusion_ended", "Intrusion terminée",
+            **({"startedMs": started["startedMs"], "durationMs": _now_ms() - started["startedMs"],
+                "peakPersons": started["peakPersons"], "photos": started["photos"]} if started else {}),
+        )
 
     def _on_vision_status(self, status: dict) -> None:
         log_fn = log.warning if status["state"] == "error" else log.info
         log_fn("vision : %s%s", status["state"], f" — {status['error']}" if status.get("error") else "")
+        logger.emit("vision.status", f"Vision : {status['state']}", level="error" if status["state"] == "error" else "info", status=status)
         asyncio.create_task(self.broadcast({"type": "vision", "data": status}))
 
     # ---- chemin rapide ----
     async def on_snapshot(self, raw: dict) -> None:
         self.latest = raw
+        self._last_snapshot_ms = _now_ms()
         self.sensor_history.append(_sensor_point(raw))
         await self.broadcast({"type": "snapshot", "data": raw})
         await self._broadcast_alerts(self.alerts.evaluate_sensors(raw))
@@ -214,6 +257,7 @@ class Hub:
             await self._broadcast_alerts(self.alerts.evaluate_analysis(self.analysis))
             if not was_ok:
                 log.info(green("modèle IA de nouveau disponible"))
+                logger.emit("analysis.recovered", "Modèle IA de nouveau disponible", analyzer=source)
         except Exception as err:  # noqa: BLE001 — le modèle ne doit jamais faire tomber l'API
             self.analysis = {
                 "ok": False,
@@ -244,15 +288,65 @@ class Hub:
             for ws, token, forget in sockets:
                 if await asyncio.to_thread(user_from_token, token) is None:
                     forget()
+                    logger.emit("ws.session_closed", "Flux fermé : session invalide, expirée ou compte supprimé", level="warning", code=4401)
                     try:
                         await ws.close(code=4401)
                     except Exception:  # noqa: BLE001 — déjà fermée
                         pass
 
+    # ---- santé des modules ----
+    async def _watch_modules(self) -> None:
+        """Toutes les secondes : un module qui ne répond plus est journalisé (module.lost), signalé par une alerte
+        « Perte de connexion », et son retour est journalisé aussi (module.recovered)."""
+        while True:
+            await asyncio.sleep(MODULE_CHECK_S)
+            try:
+                await self._check_modules()
+            except Exception:  # noqa: BLE001 — la surveillance ne doit jamais s'arrêter
+                log.exception("surveillance des modules")
+
+    async def _check_modules(self) -> None:
+        vision = self.vision_status() if self.vision else None
+        transitions = self.monitor.check(_now_ms(), self.latest, self._last_snapshot_ms, vision, self.analysis)
+        for t in transitions:
+            if t["to"] == "lost":
+                since = f"depuis {(_now_ms() - t['lastOkMs']) / 1000:.0f} s" if t["lastOkMs"] else "jamais joint"
+                log.info(red(f"PERTE DE CONNEXION : {t['label']} — {t['reason']}"))
+                logger.emit(
+                    "module.lost", f"Perte de connexion : {t['label']} — {t['reason']}", level="error",
+                    module=t["module"], label=t["label"], reason=t["reason"], lastOkMs=t["lastOkMs"], silence=since,
+                )
+            else:
+                log.info(green(f"connexion rétablie : {t['label']} (coupure de {t['downMs'] / 1000:.0f} s)"))
+                logger.emit(
+                    "module.recovered", f"Connexion rétablie : {t['label']}", module=t["module"], label=t["label"], downMs=t["downMs"],
+                )
+        if transitions:
+            await self._broadcast_alerts(self.alerts.evaluate_modules(self.monitor.states()))
+
+    # ---- relevé périodique ----
+    async def _monitor_log(self) -> None:
+        """Une ligne « monitor.snapshot » toutes les MONITOR_INTERVAL_S secondes (60 par défaut), même sans événement :
+        toutes les données des capteurs, l'analyse IA, la vision et la santé des modules (dans `context`)."""
+        started = time.monotonic()
+        while True:
+            await asyncio.sleep(self._monitor_interval_s)
+            try:
+                age = _now_ms() - self._last_snapshot_ms if self._last_snapshot_ms else None
+                logger.emit(
+                    "monitor.snapshot", "Relevé périodique", intervalS=self._monitor_interval_s,
+                    uptimeS=round(time.monotonic() - started), snapshotAgeMs=age,
+                    threat=(self.analysis or {}).get("threat"),
+                )
+            except Exception:  # noqa: BLE001 — le relevé ne doit jamais faire tomber l'API
+                log.exception("relevé périodique")
+
     # ---- cycle de vie ----
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
         self._sweeper = asyncio.create_task(self._sweep_sessions())
+        self._watchdog = asyncio.create_task(self._watch_modules())
+        self._monitor_task = asyncio.create_task(self._monitor_log())
         await self.provider.start(self.on_snapshot)
         if self.vision:
             self.vision.start(
@@ -265,6 +359,10 @@ class Hub:
     async def stop(self) -> None:
         if self._sweeper:
             self._sweeper.cancel()
+        if self._watchdog:
+            self._watchdog.cancel()
+        if self._monitor_task:
+            self._monitor_task.cancel()
         if self.vision:
             await asyncio.to_thread(self.vision.stop)
         await self.provider.stop()

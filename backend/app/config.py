@@ -22,6 +22,7 @@ _load_dotenv()  # avant les valeurs par défaut ci-dessous, qui lisent os.enviro
 
 MODELS_DIR = BACKEND_DIR / "models"  # poids des modèles (YOLO, ...)
 CAPTURES_DIR = Path(os.environ.get("CAPTURES_DIR", BACKEND_DIR / "data" / "captures"))  # photos d'intrusion
+LOG_DIR = Path(os.environ.get("LOG_DIR", BACKEND_DIR / "data" / "logs"))  # journal JSON des événements (voir logger.py)
 
 
 def _num(name: str, default: float) -> float:
@@ -84,6 +85,9 @@ class AuthConfig:
     # aléatoire est généré et affiché une seule fois dans la console du backend.
     admin_username: str = os.environ.get("ADMIN_USERNAME", "admin")
     admin_password: str = os.environ.get("ADMIN_PASSWORD", "")
+    # Compte agent (consultation seule) créé en même temps que l'admin, seulement si AGENT_PASSWORD est renseigné.
+    agent_username: str = os.environ.get("AGENT_USERNAME", "agent")
+    agent_password: str = os.environ.get("AGENT_PASSWORD", "")
     # Jeton des appareils (Raspberry) qui envoient leurs images sur /ws/camera sans passer par un compte.
     # Vide = désactivé : seule la webcam d'un admin connecté peut alors envoyer des images.
     device_token: str = os.environ.get("DEVICE_TOKEN", "")
@@ -91,11 +95,20 @@ class AuthConfig:
 
 @dataclass(frozen=True)
 class Config:
+    # "prod" (défaut) ou "dev". En dev, aucune photo d'intrusion n'est enregistrée (l'alerte reste créée, sans image).
+    env: str = "dev" if os.environ.get("APP_ENV", "prod").strip().lower() in ("dev", "development") else "prod"
     # "mock" (données fictives) ou "ssh" (Raspberry Pi réel)
     provider: str = os.environ.get("PROVIDER", "mock")
     # Analyse : "mock" (heuristique factice) ou "local" (YOLO sur la caméra + fusion des capteurs, voir app/vision/)
     analyzer: str = os.environ.get("ANALYZER", "mock")
     tick_ms: int = int(_num("TICK_MS", 1000))
+    # Santé des modules (voir modules.py) : délai sans snapshot avant de déclarer le Raspberry perdu, et âge maximal
+    # de la dernière mesure du DHT22.
+    module_timeout_s: float = _num("MODULE_TIMEOUT_S", 5)
+    dht_stale_s: float = _num("DHT_STALE_S", 30)
+    # Relevé périodique dans le journal JSON (monitoring et analyse a posteriori) : une ligne avec toutes les données
+    # des capteurs au moins toutes les MONITOR_INTERVAL_S secondes, indépendamment de tout événement.
+    monitor_interval_s: float = max(1.0, _num("MONITOR_INTERVAL_S", 60))
     history_size: int = int(_num("HISTORY_SIZE", 120))
     alerts_size: int = int(_num("ALERTS_SIZE", 50))
     ssh: SshConfig = field(default_factory=SshConfig)

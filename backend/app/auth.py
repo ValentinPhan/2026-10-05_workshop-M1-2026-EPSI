@@ -165,7 +165,7 @@ def login(body: LoginBody, request: Request, response: Response):
         COOKIE, token, max_age=int(config.auth.session_hours * 3600), httponly=True, samesite="lax",
         secure=config.auth.cookie_secure, path="/",
     )
-    database.audit(user["username"], "login")
+    database.audit(user["username"], "login", f"depuis {request.client.host if request.client else '?'}")
     return _public(user)
 
 
@@ -173,7 +173,7 @@ def login(body: LoginBody, request: Request, response: Response):
 def logout(request: Request, response: Response, user: dict = Depends(current_user)):
     database.delete_session(_token_hash(request.cookies[COOKIE]))
     response.delete_cookie(COOKIE, path="/")
-    database.audit(user["username"], "logout")
+    database.audit(user["username"], "logout", f"depuis {request.client.host if request.client else '?'}")
     return {"ok": True}
 
 
