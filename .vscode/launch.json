@@ -19,6 +19,21 @@
       "preLaunchTask": "Front (Vite)"
     },
     {
+      // Caméra du RASPBERRY : le Pi envoie ses images JPEG en WebSocket (raspberry-pi/camera_push.py --url
+      // ws://<ip-du-pc>:4000/ws/camera). Le backend attend ces images, il n'ouvre aucune caméra.
+      "name": "Sentinel-X + YOLO (caméra du Raspberry, push)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["app.main:app", "--host", "0.0.0.0", "--port", "4000"],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "env": { "ANALYZER": "local", "VISION_SOURCE": "push", "YOLO_MODEL": "yolov8n-seg.pt", "YOLO_IMGSZ": "480" },
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "preLaunchTask": "Front (Vite)"
+    },
+    {
       // Données simulées, sans YOLO ni caméra : le panneau Caméra affiche un faux flux.
       "name": "Sentinel-X (mock, sans YOLO)",
       "type": "debugpy",
@@ -32,8 +47,8 @@
       "preLaunchTask": "Front (Vite)"
     },
     {
-      // Plus tard : YOLO sur une caméra branchée au backend (webcam du PC qui fait tourner le backend, ou flux du Pi).
-      // Pour le flux du Raspberry : remplacer VISION_SOURCE par l'URL du flux (ex. http://<ip-du-pi>:8080/video).
+      // YOLO sur une caméra branchée à la machine du backend (webcam du PC) ou sur un flux réseau
+      // (remplacer VISION_SOURCE par l'URL, ex. http://<ip-du-pi>:8080/video).
       "name": "Sentinel-X + YOLO (caméra du backend)",
       "type": "debugpy",
       "request": "launch",

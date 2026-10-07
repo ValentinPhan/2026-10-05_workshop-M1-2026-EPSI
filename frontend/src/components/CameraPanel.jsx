@@ -102,7 +102,13 @@ const VISION_WAIT = {
   stopped: 'Vision arrêtée',
 };
 
-function VisionFeed({ vision }) {
+function waitText(vision, canControl) {
+  if (vision.state === 'waiting' && vision.source === 'push') return 'En attente de la caméra du Raspberry (camera_push.py)…';
+  if (vision.state === 'waiting' && !canControl) return "En attente de la webcam du navigateur (un administrateur doit l'activer)";
+  return VISION_WAIT[vision.state] ?? vision.state;
+}
+
+function VisionFeed({ vision, canControl }) {
   const canvasRef = useRef(null);
   const { hasFrame } = useVideoStream(canvasRef, vision.state === 'running' || vision.state === 'waiting');
 
@@ -112,7 +118,7 @@ function VisionFeed({ vision }) {
       {!hasFrame && (
         <div className="feed-overlay">
           {vision.state !== 'error' && <Spin />}
-          <span>{VISION_WAIT[vision.state] ?? vision.state}</span>
+          <span>{waitText(vision, canControl)}</span>
         </div>
       )}
     </>
@@ -122,10 +128,13 @@ function VisionFeed({ vision }) {
 // `detections` vient du modèle IA (en différé). `vision.enabled` : le backend porte YOLO.
 // Interrupteur « Webcam PC » : sans YOLO, il affiche la webcam dans le navigateur ; avec YOLO, il
 // l'envoie au backend (useWebcamUpload) et la vidéo annotée revient dans le panneau.
-export default function CameraPanel({ camera, detections, vision }) {
+// `canControl` : compte admin. Un agent (consultation seule) voit l'image mais ne peut pas changer la source vidéo
+// ni envoyer sa webcam.
+export default function CameraPanel({ camera, detections, vision, canControl = true }) {
   const yolo = Boolean(vision?.enabled);
+  const remote = yolo && vision.source === 'push'; // VISION_SOURCE=push : images envoyées par le Raspberry
   // si le backend attend déjà la webcam du navigateur (VISION_SOURCE=browser), on l'active d'emblée
-  const [webcam, setWebcam] = useState(() => yolo && vision.source === 'browser');
+  const [webcam, setWebcam] = useState(() => canControl && yolo && vision.source === 'browser');
   const [error, setError] = useState(null);
   const persons = detections.filter((d) => d.label === 'person').length;
 
@@ -147,13 +156,14 @@ export default function CameraPanel({ camera, detections, vision }) {
           {(yolo || !webcam) && (
             <StatusTag tone={persons ? 'danger' : 'ok'}>{persons ? `${persons} personne détectée` : 'RAS'}</StatusTag>
           )}
-          <Switch checked={webcam} onChange={toggle} checkedChildren="Webcam PC" unCheckedChildren="Webcam PC" />
+          {/* caméra distante (Raspberry) : ses images arrivent seules, la webcam du navigateur ne doit pas s'y ajouter */}
+          {!remote && canControl && <Switch checked={webcam} onChange={toggle} checkedChildren="Webcam PC" unCheckedChildren="Webcam PC" />}
         </Space>
       }
     >
       <div className="feed-wrap">
         {yolo ? (
-          <VisionFeed vision={vision} />
+          <VisionFeed vision={vision} canControl={canControl} />
         ) : webcam ? (
           <WebcamFeed onError={onWebcamError} />
         ) : camera.streamUrl ? (
@@ -163,7 +173,7 @@ export default function CameraPanel({ camera, detections, vision }) {
         )}
         <span className="feed-tag">
           {yolo
-            ? `YOLO · ${vision.source === 'browser' ? 'webcam navigateur' : 'caméra backend'} · ${vision.fps} fps`
+            ? `YOLO · ${{ browser: 'webcam navigateur', push: 'caméra du Raspberry' }[vision.source] ?? 'caméra backend'} · ${vision.fps} fps`
             : webcam
               ? 'WEBCAM PC'
               : `CAM-01 · ${camera.width}×${camera.height} · ${camera.fps} fps${camera.streamUrl ? '' : ' · MOCK'}`}

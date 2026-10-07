@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from fastapi import WebSocket
 
 from .alerts import AlertEngine
+from .auth import user_from_token
 from .config import Config
 from .console import green, red
 
@@ -45,35 +46,49 @@ def _sensor_point(raw: dict) -> dict:
     }
 
 
+SESSION_CHECK_S = 15  # les WebSocket ouvertes sont revérifiées à cet intervalle (session fermée, compte supprimé...)
+
+
 @dataclass(eq=False)
 class VideoClient:
     ws: WebSocket
+    token: str | None = None  # jeton de session du client, pour revérifier qu'il est toujours valide
     busy: bool = False  # une image est en cours d'envoi : on saute les suivantes (pas de retard cumulé)
 
 
 class Hub:
-    def __init__(self, config: Config, provider, analyzer, vision=None):
+    def __init__(self, config: Config, provider, analyzer, vision=None, database=None):
         self.provider = provider
         self.analyzer = analyzer
         self.vision = vision
-        self.alerts = AlertEngine(config.thresholds, config.alerts_size, intrusion_from_vision=vision is not None)
+        self.db = database  # historique des alertes (optionnel : sans base, tout reste en mémoire)
+        self.alerts = AlertEngine(
+            config.thresholds,
+            config.alerts_size,
+            intrusion_from_vision=vision is not None,
+            initial=database.recent_alerts(config.alerts_size) if database else None,
+        )
         self.sensor_history: deque[dict] = deque(maxlen=config.history_size)
         self.threat_history: deque[dict] = deque(maxlen=config.history_size)  # {ts, score}
         self.latest: dict | None = None  # dernier snapshot brut du Raspberry
         self.analysis: dict | None = None  # dernier résultat du modèle IA (arrive en différé)
         self._analyzing = False
         self._clients: set[WebSocket] = set()
+        self._tokens: dict[WebSocket, str | None] = {}  # jeton de session de chaque client /ws
         self._video_clients: set[VideoClient] = set()
+        self._sweeper: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
     # ---- WebSocket événements (/ws) ----
-    async def connect(self, ws: WebSocket) -> None:
+    async def connect(self, ws: WebSocket, token: str | None = None) -> None:
         await ws.accept()
         self._clients.add(ws)
+        self._tokens[ws] = token
         log.info(green(f"front connecté au back ({len(self._clients)} client(s))"))
         await ws.send_text(json.dumps({"type": "hello", "data": self.hello()}))
 
     def disconnect(self, ws: WebSocket) -> None:
+        self._tokens.pop(ws, None)
         if ws in self._clients:
             self._clients.discard(ws)
             log.info(red(f"front déconnecté du back ({len(self._clients)} client(s))"))
@@ -102,13 +117,18 @@ class Hub:
                 self.disconnect(client)
 
     async def _broadcast_alerts(self, created: list[dict]) -> None:
+        if created and self.db:
+            try:
+                await asyncio.to_thread(self.db.save_alerts, created)
+            except Exception as err:  # noqa: BLE001 — une base en panne ne doit pas couper les alertes en direct
+                log.warning(red(f"alerte non enregistrée en base : {err}"))
         for alert in created:
             await self.broadcast({"type": "alert", "data": alert})
 
     # ---- WebSocket vidéo (/ws/video) : images JPEG annotées, en binaire ----
-    async def connect_video(self, ws: WebSocket) -> VideoClient:
+    async def connect_video(self, ws: WebSocket, token: str | None = None) -> VideoClient:
         await ws.accept()
-        client = VideoClient(ws)
+        client = VideoClient(ws, token)
         self._video_clients.add(client)
         return client
 
@@ -212,9 +232,27 @@ class Hub:
         finally:
             self._analyzing = False
 
+    # ---- sessions des WebSocket ouvertes ----
+    async def _sweep_sessions(self) -> None:
+        """Une WebSocket n'est authentifiée qu'à son ouverture : sans ce balayage, un compte supprimé, un mot de passe
+        réinitialisé ou une déconnexion laisserait les flux (données, vidéo) ouverts jusqu'à la prochaine
+        reconnexion. On ferme avec le code 4401, le dashboard revient alors à la page de connexion."""
+        while True:
+            await asyncio.sleep(SESSION_CHECK_S)
+            sockets = [(ws, self._tokens.get(ws), lambda w=ws: self.disconnect(w)) for ws in list(self._clients)]
+            sockets += [(c.ws, c.token, lambda c=c: self.disconnect_video(c)) for c in list(self._video_clients)]
+            for ws, token, forget in sockets:
+                if await asyncio.to_thread(user_from_token, token) is None:
+                    forget()
+                    try:
+                        await ws.close(code=4401)
+                    except Exception:  # noqa: BLE001 — déjà fermée
+                        pass
+
     # ---- cycle de vie ----
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()
+        self._sweeper = asyncio.create_task(self._sweep_sessions())
         await self.provider.start(self.on_snapshot)
         if self.vision:
             self.vision.start(
@@ -225,6 +263,8 @@ class Hub:
             )
 
     async def stop(self) -> None:
+        if self._sweeper:
+            self._sweeper.cancel()
         if self.vision:
             await asyncio.to_thread(self.vision.stop)
         await self.provider.stop()

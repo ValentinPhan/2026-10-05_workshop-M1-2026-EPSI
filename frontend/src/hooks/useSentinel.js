@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { postJson } from '../api.js';
+import { AUTH_EXPIRED, postJson } from '../api.js';
 
 const HISTORY_MAX = 120;
 const ALERTS_MAX = 50;
@@ -78,9 +78,15 @@ export function useSentinel() {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         setConnected(false);
         if (closed) return;
+        if (event.code === 4401) {
+          // session refusée : retour à la page de connexion, inutile de réessayer
+          closed = true;
+          window.dispatchEvent(new Event(AUTH_EXPIRED));
+          return;
+        }
         // backoff exponentiel plafonné à 5 s
         const delay = Math.min(5000, 500 * 2 ** retryRef.current++);
         timer = setTimeout(connect, delay);

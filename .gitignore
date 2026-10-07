@@ -12,3 +12,6 @@ __pycache__/
 backend/data/
 ml/vision/captures/
 ml/vision/runs/
+
+# réglages personnels de Claude Code (le reste de .claude/ est versionné)
+.claude/settings.local.json

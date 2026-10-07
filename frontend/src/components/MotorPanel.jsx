@@ -25,7 +25,8 @@ function Dial({ angle, target }) {
   );
 }
 
-export default function MotorPanel({ motor, sendMotor }) {
+// readOnly : compte « agent » (consultation seule) — l'état du moteur reste visible, les commandes sont désactivées.
+export default function MotorPanel({ motor, sendMotor, readOnly = false }) {
   const [error, setError] = useState(null);
   const run = (cmd) => sendMotor(cmd).then(() => setError(null)).catch((e) => setError(e.message));
   const sweeping = motor.mode === 'sweep';
@@ -33,7 +34,12 @@ export default function MotorPanel({ motor, sendMotor }) {
   return (
     <Panel
       title="Moteur (socle)"
-      extra={<StatusTag tone={sweeping ? 'info' : motor.moving ? 'warn' : 'neutral'}>{sweeping ? 'Balayage' : motor.moving ? 'En mouvement' : 'Arrêté'}</StatusTag>}
+      extra={
+        <Space size={4}>
+          {readOnly && <StatusTag tone="neutral">Lecture seule</StatusTag>}
+          <StatusTag tone={sweeping ? 'info' : motor.moving ? 'warn' : 'neutral'}>{sweeping ? 'Balayage' : motor.moving ? 'En mouvement' : 'Arrêté'}</StatusTag>
+        </Space>
+      }
     >
       <Dial angle={motor.angle} target={motor.target} />
       <Flex gap={24} wrap>
@@ -45,7 +51,7 @@ export default function MotorPanel({ motor, sendMotor }) {
       <div>
         <Typography.Text type="secondary">Position</Typography.Text>
         <SyncedSlider
-          min={-90} max={90} value={motor.target} disabled={sweeping}
+          min={-90} max={90} value={motor.target} disabled={sweeping || readOnly}
           marks={{ '-90': '-90°', 0: '0°', 90: '90°' }}
           tooltip={{ formatter: (v) => `${v}°` }}
           onCommit={(angle) => run({ type: 'move', angle })}
@@ -54,22 +60,22 @@ export default function MotorPanel({ motor, sendMotor }) {
       <div>
         <Typography.Text type="secondary">Vitesse</Typography.Text>
         <SyncedSlider
-          min={5} max={90} step={5} value={motor.speed}
+          min={5} max={90} step={5} value={motor.speed} disabled={readOnly}
           tooltip={{ formatter: (v) => `${v}°/s` }}
           onCommit={(value) => run({ type: 'speed', value })}
         />
       </div>
 
       <Space.Compact block>
-        <Button block icon={<LeftOutlined />} disabled={sweeping} onClick={() => run({ type: 'step', delta: -10 })}>−10°</Button>
-        <Button block icon={<AimOutlined />} disabled={sweeping} onClick={() => run({ type: 'move', angle: 0 })}>Centrer</Button>
-        <Button block icon={<RightOutlined />} iconPlacement="end" disabled={sweeping} onClick={() => run({ type: 'step', delta: 10 })}>+10°</Button>
+        <Button block icon={<LeftOutlined />} disabled={sweeping || readOnly} onClick={() => run({ type: 'step', delta: -10 })}>−10°</Button>
+        <Button block icon={<AimOutlined />} disabled={sweeping || readOnly} onClick={() => run({ type: 'move', angle: 0 })}>Centrer</Button>
+        <Button block icon={<RightOutlined />} iconPlacement="end" disabled={sweeping || readOnly} onClick={() => run({ type: 'step', delta: 10 })}>+10°</Button>
       </Space.Compact>
       <Flex gap={8}>
-        <Button block type={sweeping ? 'primary' : 'default'} icon={<SyncOutlined spin={sweeping} />} onClick={() => run({ type: 'sweep', enabled: !sweeping })}>
+        <Button block type={sweeping ? 'primary' : 'default'} icon={<SyncOutlined spin={sweeping} />} disabled={readOnly} onClick={() => run({ type: 'sweep', enabled: !sweeping })}>
           {sweeping ? 'Arrêter le balayage' : 'Balayage auto'}
         </Button>
-        <Button danger icon={<StopOutlined />} onClick={() => run({ type: 'stop' })}>Stop</Button>
+        <Button danger icon={<StopOutlined />} disabled={readOnly} onClick={() => run({ type: 'stop' })}>Stop</Button>
       </Flex>
       {error && <Alert type="error" showIcon title={error} />}
     </Panel>

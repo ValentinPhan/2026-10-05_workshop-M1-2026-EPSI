@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AUTH_EXPIRED } from '../api.js';
 import { drawFrame } from '../components/drawOverlay.js';
 
 // Reçoit sur /ws/video l'image de la caméra AVEC ses résultats YOLO (une image par message binaire) et les
@@ -46,9 +47,14 @@ export function useVideoStream(canvasRef, active) {
         }
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         setConnected(false);
         setHasFrame(false);
+        if (event.code === 4401) {
+          closed = true;
+          window.dispatchEvent(new Event(AUTH_EXPIRED)); // session refusée : retour à la page de connexion
+          return;
+        }
         if (!closed) timer = setTimeout(connect, Math.min(5000, 500 * 2 ** retry++));
       };
     };

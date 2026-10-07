@@ -4,6 +4,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+
+
+def _load_dotenv() -> None:
+    """Lit backend/.env (ignoré par git : mots de passe, DATABASE_URL...). Les variables déjà définies gagnent."""
+    path = BACKEND_DIR / ".env"
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+_load_dotenv()  # avant les valeurs par défaut ci-dessous, qui lisent os.environ à l'import
+
 MODELS_DIR = BACKEND_DIR / "models"  # poids des modèles (YOLO, ...)
 CAPTURES_DIR = Path(os.environ.get("CAPTURES_DIR", BACKEND_DIR / "data" / "captures"))  # photos d'intrusion
 
@@ -57,6 +73,23 @@ class VisionConfig:
 
 
 @dataclass(frozen=True)
+class AuthConfig:
+    """Base de données et comptes. Deux rôles : admin (tout, dont piloter la caméra) et agent (consultation seule)."""
+
+    # SQLite par défaut (un fichier, rien à installer). PostgreSQL : postgresql+psycopg://user:motdepasse@hote:5432/base
+    database_url: str = os.environ.get("DATABASE_URL", f"sqlite:///{(BACKEND_DIR / 'data' / 'sentinel.db').as_posix()}")
+    session_hours: float = _num("SESSION_HOURS", 12)
+    cookie_secure: bool = os.environ.get("COOKIE_SECURE", "0").lower() in ("1", "true", "yes")  # 1 si servi en HTTPS
+    # Premier lancement : compte admin créé s'il n'existe aucun utilisateur. Sans ADMIN_PASSWORD, un mot de passe
+    # aléatoire est généré et affiché une seule fois dans la console du backend.
+    admin_username: str = os.environ.get("ADMIN_USERNAME", "admin")
+    admin_password: str = os.environ.get("ADMIN_PASSWORD", "")
+    # Jeton des appareils (Raspberry) qui envoient leurs images sur /ws/camera sans passer par un compte.
+    # Vide = désactivé : seule la webcam d'un admin connecté peut alors envoyer des images.
+    device_token: str = os.environ.get("DEVICE_TOKEN", "")
+
+
+@dataclass(frozen=True)
 class Config:
     # "mock" (données fictives) ou "ssh" (Raspberry Pi réel)
     provider: str = os.environ.get("PROVIDER", "mock")
@@ -67,6 +100,7 @@ class Config:
     alerts_size: int = int(_num("ALERTS_SIZE", 50))
     ssh: SshConfig = field(default_factory=SshConfig)
     vision: VisionConfig = field(default_factory=VisionConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
     thresholds: Thresholds = field(default_factory=Thresholds)
 
 

@@ -18,6 +18,9 @@ backend/            API FastAPI + vision YOLO  (tourne sur le PC)
   app/
     main.py         routes REST + WebSocket (/ws, /ws/video)
     hub.py          état, diffusion WebSocket, chemins rapide / lent / vidéo
+    auth.py         comptes, sessions, rôles admin / agent, limitation des tentatives
+    db.py           base de données (SQLite par défaut, PostgreSQL via DATABASE_URL)
+    cli.py          gestion des comptes en ligne de commande (mot de passe perdu)
     alerts.py       moteur d'alertes
     config.py       seuils et variables d'environnement
     providers/      sources de données du Pi : mock.py · ssh.py (à implémenter) · motor.py
@@ -49,7 +52,7 @@ pip install -r requirements-vision.txt
 
 ## Lancer
 
-- **VS Code** (F5) : trois configurations, **choisissez-la dans la liste de « Exécuter et déboguer »** (la dernière utilisée est retenue).
+- **VS Code** (F5) : plusieurs configurations (dont « caméra du Raspberry, push »), **choisissez-la dans la liste de « Exécuter et déboguer »** (la dernière utilisée est retenue).
   - « **Sentinel-X + YOLO (webcam navigateur)** » (par défaut) : la webcam est ouverte par le navigateur, ses images sont envoyées au backend, YOLO les traite et React dessine les carrés rouges. Le backend n'ouvre aucune caméra. Le navigateur demande l'autorisation de la caméra au chargement.
   - « Sentinel-X (mock, sans YOLO) » : données simulées, faux flux caméra, **aucune détection**.
   - « Sentinel-X + YOLO (caméra du backend) » : YOLO sur la caméra de la machine du backend ou sur le flux du Pi (pour plus tard).
@@ -64,13 +67,28 @@ pip install -r requirements-vision.txt
 
 Les terminaux affichent en vert la connexion front ↔ back et en rouge la déconnexion / les intrusions.
 
+## Comptes et base de données
+
+Le dashboard est protégé par un compte. Deux rôles :
+
+| Rôle | Peut |
+|---|---|
+| **agent** | consulter : données, vidéo YOLO, alertes, photos. Les commandes sont désactivées (« Lecture seule »). |
+| **admin** | tout : piloter le moteur / la position de la caméra, changer la source vidéo, lancer les simulations, créer / supprimer des comptes, voir le journal d'audit. |
+
+- **Premier lancement** : si la base n'a aucun utilisateur, le compte `admin` est créé. Sans `ADMIN_PASSWORD`, **un mot de passe aléatoire est affiché une seule fois dans la console du backend** (à noter). Les agents se créent ensuite depuis le dashboard (panneau « Comptes et journal d'audit », admin seulement).
+- **Mot de passe perdu** : `cd backend` puis `python -m app.cli passwd admin` (voir aussi `list` et `create <identifiant> <admin|agent>`), avec le venv.
+- **Base** : SQLite par défaut (un fichier `backend/data/sentinel.db`, rien à installer). **PostgreSQL** : définir `DATABASE_URL=postgresql+psycopg://utilisateur:mot-de-passe@hote:5432/base` dans `backend/.env` (modèle : `backend/.env.example`, fichier ignoré par git) ; le même code tourne sur les deux, les tables sont créées au démarrage. Le conteneur Postgres du serveur doit publier son port 5432 sur la machine du backend.
+- **Ce qui est enregistré** : comptes et sessions, **historique des alertes** (le journal survit à un redémarrage), **journal d'audit** (connexions, échecs, commandes moteur, changement de source vidéo, simulations, gestion des comptes).
+- **Sécurité** : mots de passe hachés (scrypt, sel aléatoire) ; session = jeton aléatoire dans un cookie `HttpOnly`, seule son empreinte est en base ; 5 échecs de connexion en 5 min bloquent temporairement l'identifiant ; les droits sont vérifiés **côté serveur** (l'interface ne fait que les refléter) ; les photos d'intrusion et les WebSocket exigent un compte ; les WebSocket ouvertes sont revérifiées toutes les 15 s (compte supprimé, mot de passe réinitialisé ou déconnexion = flux coupés). Le Raspberry s'authentifie avec un jeton d'appareil (`DEVICE_TOKEN`, `camera_push.py --token`). En HTTPS, mettre `COOKIE_SECURE=1`.
+
 ### Variables d'environnement du back
 
 | Variable | Défaut | Rôle |
 |---|---|---|
 | `PROVIDER` | `mock` | source des capteurs : `mock` \| `ssh` (à implémenter) |
 | `ANALYZER` | `mock` | `mock` \| `local` (YOLO + fusion capteurs) |
-| `VISION_SOURCE` | `0` | image de YOLO : `0` = webcam de la machine du backend, URL du flux du Pi (`http://…`, `rtsp://…`), chemin d'un fichier vidéo (rejoué en boucle), ou `browser` = webcam du navigateur (le dashboard envoie ses images) |
+| `VISION_SOURCE` | `0` | image de YOLO : `0` = webcam de la machine du backend, URL du flux du Pi (`http://…`, `rtsp://…`), chemin d'un fichier vidéo (rejoué en boucle), `browser` = webcam du navigateur (le dashboard envoie ses images), ou `push` = images envoyées par le Raspberry (`raspberry-pi/camera_push.py`) |
 | `YOLO_MODEL` | `yolov8n.pt` | poids dans `backend/models/` (téléchargés si absents). `yolov8n-seg.pt` dessine la **silhouette** de chaque personne (≈ 2× plus lent), `yolov8n.pt` seulement des cadres |
 | `YOLO_CONF` / `YOLO_IMGSZ` | `0.5` / `640` | seuil de confiance / taille d'inférence (plus petit = plus rapide) |
 | `VISION_FPS` | `10` | plafond d'images traitées par seconde |
@@ -80,6 +98,12 @@ Les terminaux affichent en vert la connexion front ↔ back et en rouge la déco
 | `CAPTURE_SETTLE_S` | `1.5` | latence avant de photographier quand le nombre de personnes monte (plus grand = moins de photos, alerte plus tardive) |
 | `CAPTURES_DIR` | `backend/data/captures` | dossier des photos d'intrusion |
 | `TICK_MS` | `1000` | période des capteurs |
+| `DATABASE_URL` | SQLite `backend/data/sentinel.db` | base de données (`postgresql+psycopg://…` pour PostgreSQL) |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / aléatoire | compte admin créé au premier lancement |
+| `DEVICE_TOKEN` | vide | jeton du Raspberry pour `/ws/camera` (vide = le Pi est refusé) |
+| `SESSION_HOURS` / `COOKIE_SECURE` | `12` / `0` | durée des sessions / cookie réservé au HTTPS |
+
+Ces variables peuvent aussi être mises dans `backend/.env` (ignoré par git, modèle : `backend/.env.example`).
 
 ## Architecture
 
@@ -100,7 +124,10 @@ Raspberry Pi ──(brut : capteurs)──► backend ──► front   chemin r
 - L'analyseur (score de menace, anomalies DHT22) reçoit le snapshot dans un thread ; son résultat repart plus tard (message `analysis`, avec `forTs` = snapshot analysé et `latencyMs`). S'il est occupé, le snapshot est sauté ; s'il plante, le dashboard continue et affiche « IA hors ligne ».
 - Alertes : proximité et pic thermique = seuils sur la donnée brute (immédiat) ; anomalie d'environnement = analyseur ; intrusion = service de vision (ou analyseur en mode mock).
 - **Webcam du navigateur** : l'interrupteur « Webcam PC » du panneau Caméra envoie les images de la webcam (JPEG, ~8/s) au backend sur `/ws/camera` ; YOLO les traite et l'image revient avec ses résultats sur `/ws/video`. Le backend relâche alors sa propre caméra (une webcam ne s'ouvre que dans un programme à la fois) et la reprend quand on désactive l'interrupteur. Avec `VISION_SOURCE=browser`, le backend n'ouvre aucune caméra et l'interrupteur est activé d'emblée.
-- Caméra du Pi : mettre l'URL de son flux dans `VISION_SOURCE`, le reste est identique.
+- **Caméra du Raspberry, deux façons** (le backend traite les images de la même manière) :
+  - **Push en WebSocket (recommandé)** : le Pi lance `python3 raspberry-pi/camera_push.py --url ws://<ip-du-pc>:4000/ws/camera --token <DEVICE_TOKEN>` (le jeton est défini dans `backend/.env`) ; le backend démarre avec `VISION_SOURCE=push` (config F5 « caméra du Raspberry, push », qui écoute sur toutes les interfaces). Aucun serveur de streaming à installer sur le Pi, reconnexion automatique, pas de file d'attente : on capture juste avant d'envoyer, la latence reste basse. Environ 15 Ko par image, soit ~1,3 Mbit/s à 10 images/s. Dépendances du Pi : `python3-picamera2` et `pip install websockets`. Le script a été testé avec un fichier vidéo en entrée, **pas encore sur un vrai Raspberry** (la partie `picamera2` est à valider).
+  - **Pull** : le Pi expose un flux MJPEG en HTTP et on met son URL dans `VISION_SOURCE` (`http://<ip-du-pi>:8080/…`).
+  - Pas de MQTT pour la vidéo (message par message, sans notion de « dernière image ») et pas dans la session SSH (une rafale d'images retarderait les ordres moteur) : SSH reste pour le JSON et les commandes.
 
 ## Modules du dashboard
 
@@ -120,7 +147,10 @@ En mode mock, trois boutons du journal d'alertes déclenchent un intrus (capteur
 ## API
 
 REST :
-- `GET /api/health`, `GET /api/snapshot` (brut), `GET /api/analysis` (dernier résultat), `GET /api/vision` (état caméra + YOLO), `GET /api/history` (`{sensors, threat}`), `GET /api/alerts`
+Tout exige un compte (cookie de session) sauf `GET /api/health`. **Consultation (admin ou agent)** ci-dessous ; **actions réservées aux admins** : `POST /api/motor`, `POST /api/vision/source`, `POST /api/vision/analyze`, `POST /api/mock/{scenario}`, gestion des comptes. Un agent reçoit `403`, un visiteur non connecté `401`.
+
+- Comptes : `POST /api/auth/login` (`{username, password}`), `POST /api/auth/logout`, `GET /api/auth/me` ; admin : `GET|POST /api/users`, `DELETE /api/users/{id}`, `POST /api/users/{id}/password`, `GET /api/audit`
+- `GET /api/health` (public), `GET /api/snapshot` (brut), `GET /api/analysis` (dernier résultat), `GET /api/vision` (état caméra + YOLO), `GET /api/history` (`{sensors, threat}`), `GET /api/alerts`
 - `GET /api/captures/{fichier}` — photo d'intrusion
 - `POST /api/vision/analyze` — YOLO sur une image envoyée en entrée (`?annotated=true` pour l'image dessinée)
 - `POST /api/vision/source` — `{mode:'browser'}` (YOLO traite la webcam du navigateur) | `{mode:'default'}` (caméra du backend)
@@ -131,7 +161,7 @@ REST :
 WebSocket :
 - `/ws` (JSON) — `hello` (état complet à la connexion), `snapshot`, `analysis`, `alert` (champ `snapshot` = URL de la photo pour une intrusion), `motor`, `vision` (`{enabled, state: loading|running|waiting|error|stopped, source, model, fps, error}` ; `waiting` = mode navigateur sans image reçue)
 - `/ws/video` (binaire, backend → front) — une image + ses résultats YOLO + la menace par message (format ci-dessus) ; rien si la vision est désactivée
-- `/ws/camera` (binaire, front → backend) — images JPEG de la webcam du navigateur, pour YOLO (mode navigateur)
+- `/ws/camera` (binaire, vers le backend) — images JPEG envoyées par la webcam du navigateur (mode `browser`) ou par le Raspberry (mode `push`), pour YOLO. Accepté pour un **admin connecté** (cookie) ou un appareil muni du jeton `?token=<DEVICE_TOKEN>` (le Raspberry). Les autres WebSocket (`/ws`, `/ws/video`) exigent un compte ; refus = fermeture avec le code `4401` (non connecté) ou `4403` (rôle insuffisant)
 
 Les clés JSON sont en camelCase (`distanceCm`, `maxC`…) : c'est le contrat avec le front.
 

@@ -64,18 +64,14 @@ const LEVEL_TONE = { critical: 'danger', warning: 'warn', info: 'info' };
 
 export function AlertsPanel({ alerts, triggerScenario, mock }) {
   return (
-    <Panel
-      title="Journal d'alertes"
-      extra={
-        mock && (
-          <Flex gap={8} wrap>
-            <Button size="small" onClick={() => triggerScenario('intruder')}>Simuler un intrus</Button>
-            <Button size="small" onClick={() => triggerScenario('heat')}>Simuler un pic thermique</Button>
-            <Button size="small" onClick={() => triggerScenario('window')}>Simuler une fenêtre ouverte</Button>
-          </Flex>
-        )
-      }
-    >
+    <Panel title="Journal d'alertes" extra={<StatusTag>{alerts.length}</StatusTag>}>
+      {mock && (
+        <Flex gap={8} wrap>
+          <Button size="small" onClick={() => triggerScenario('intruder')}>Simuler un intrus</Button>
+          <Button size="small" onClick={() => triggerScenario('heat')}>Simuler un pic thermique</Button>
+          <Button size="small" onClick={() => triggerScenario('window')}>Simuler une fenêtre ouverte</Button>
+        </Flex>
+      )}
       <List
         size="small"
         style={{ maxHeight: 260, overflowY: 'auto' }}

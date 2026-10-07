@@ -12,13 +12,16 @@ from .config import Thresholds
 
 
 class AlertEngine:
-    def __init__(self, thresholds: Thresholds, size: int, intrusion_from_vision: bool = False):
+    def __init__(
+        self, thresholds: Thresholds, size: int, intrusion_from_vision: bool = False, initial: list[dict] | None = None
+    ):
         self._th = thresholds
         self._size = size
         self._intrusion_from_vision = intrusion_from_vision
-        self._alerts: list[dict] = []
+        # `initial` : historique relu en base (les plus récentes d'abord), pour que le journal survive à un redémarrage
+        self._alerts: list[dict] = list(initial or [])[:size]
         self._active: set[str] = set()
-        self._next_id = 1
+        self._next_id = max((a["id"] for a in initial or []), default=0) + 1
 
     def _add(self, ts: int, level: str, key: str, message: str, **extra) -> dict:
         alert = {"id": self._next_id, "ts": ts, "level": level, "key": key, "message": message, **extra}

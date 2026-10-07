@@ -1,0 +1,4 @@
+{
+  // Interpréteur Python de l'éditeur = le venv du backend (sinon l'éditeur signale fastapi, sqlalchemy... « non installés »)
+  "python.defaultInterpreterPath": "${workspaceFolder}/backend/.venv/Scripts/python.exe"
+}

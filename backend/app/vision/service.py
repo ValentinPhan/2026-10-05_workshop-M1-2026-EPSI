@@ -11,10 +11,11 @@ vers le hub, depuis son thread :
 
 Deux sources d'images, commutables à chaud :
   - la caméra du backend (VISION_SOURCE : "0" = webcam du PC, URL du flux du Pi, fichier vidéo) ;
-  - le navigateur : le dashboard envoie ses images JPEG (webcam du PC qui ouvre le dashboard) sur
-    /ws/camera -> push_frame(). Utile quand la webcam n'est pas sur la machine du backend.
-    VISION_SOURCE=browser démarre directement dans ce mode. En passant en mode navigateur, le backend
-    relâche sa caméra (une webcam ne peut être ouverte que par un programme à la fois).
+  - des images POUSSÉES sur /ws/camera (JPEG binaire) -> push_frame() : par le navigateur (webcam du PC
+    qui ouvre le dashboard) ou par le Raspberry (raspberry-pi/camera_push.py). Utile quand la caméra
+    n'est pas sur la machine du backend. VISION_SOURCE=browser | push démarre directement dans ce mode.
+    En passant en mode navigateur, le backend relâche sa caméra (une webcam ne peut être ouverte que
+    par un programme à la fois).
 
 La logique d'intrusion vient du script de l'équipe IA (ml/vision/yolo_intrusion.py).
 """
@@ -31,7 +32,8 @@ from .detector import YoloDetector
 
 log = logging.getLogger("sentinel-x.vision")
 
-BROWSER = "browser"
+BROWSER = "browser"  # images envoyées par la webcam du navigateur (commutable à chaud depuis le dashboard)
+PUSH = "push"  # images envoyées par un client externe, ex. le Raspberry (raspberry-pi/camera_push.py)
 RETRY_S = 2.0  # délai avant de rouvrir une caméra injoignable
 MAX_WIDTH = 640  # les images envoyées au dashboard sont réduites à cette largeur
 PUSH_IDLE_S = 3.0  # sans image du navigateur pendant ce délai : on repasse en "attente"
@@ -62,14 +64,15 @@ class VisionService:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._configured_browser = cfg.source == BROWSER  # pas de caméra côté backend : le mode navigateur est le seul
-        self._push_mode = self._configured_browser
+        # VISION_SOURCE=browser|push : pas de caméra côté backend, les images arrivent sur /ws/camera
+        self._configured_push = cfg.source in (BROWSER, PUSH)
+        self._push_mode = self._configured_push
         self._cond = threading.Condition()  # protège _pushed et réveille le thread à l'arrivée d'une image
         self._pushed: bytes | None = None
         self._status = {
             "enabled": True,
             "state": "stopped",
-            "source": BROWSER if self._push_mode else cfg.source,
+            "source": cfg.source,
             "model": cfg.model,
             "fps": 0.0,
             "error": None,
@@ -135,13 +138,16 @@ class VisionService:
         return {"ts": int(time.time() * 1000), "width": width, "height": height, "detections": detections, "annotated": encoded}
 
     def set_push_mode(self, enabled: bool) -> dict:
-        """Source des images : le navigateur (True) ou la caméra du backend (False)."""
-        enabled = enabled or self._configured_browser
+        """Source des images : le navigateur (True) ou la caméra du backend (False).
+
+        Avec VISION_SOURCE=browser|push il n'y a pas de caméra côté backend : le mode reste « images poussées ».
+        """
+        enabled = enabled or self._configured_push
         with self._cond:
             self._push_mode = enabled
             self._pushed = None
             self._cond.notify_all()  # réveille le thread, qui change de source
-        self._set_status(source=BROWSER if enabled else self._cfg.source)
+        self._set_status(source=self._cfg.source if (self._configured_push or not enabled) else BROWSER)
         return self.status()
 
     def push_frame(self, jpeg: bytes) -> bool:
