@@ -11,6 +11,17 @@ Deux modes, selon la variable `ANALYZER` :
 | `ANALYZER=mock` (défaut) | simulés (`PROVIDER=mock`) | faux flux + faux détecteur | heuristique factice |
 | `ANALYZER=local` | simulés pour l'instant, SSH à venir | **vraie caméra + YOLOv8** | fusion des capteurs avec les détections YOLO |
 
+## Matériel (liste finale)
+
+| Composant | Rôle |
+|---|---|
+| Raspberry Pi 3 | unité centrale du boîtier : lit les capteurs, pilote le moteur |
+| Caméra Raspberry Pi (v1) | flux vidéo pour la détection YOLO |
+| Micro-servomoteur SG90 | oriente le capteur ultrason (radar) |
+| Capteur température / humidité DHT22 | données d'environnement (module « V182 », 3 broches) |
+| Capteur ultrason | mesure de distance (alerte de proximité) |
+| Module ESP32 | microcontrôleur additionnel (rôle à préciser) |
+
 ## Structure du dépôt
 
 ```
