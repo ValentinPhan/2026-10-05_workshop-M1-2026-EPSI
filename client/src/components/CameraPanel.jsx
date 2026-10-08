@@ -93,6 +93,7 @@ function WebcamFeed({ onError }) {
 export default function CameraPanel({ camera, detections }) {
   const [webcam, setWebcam] = useState(false);
   const [error, setError] = useState(null);
+  const [streamFailed, setStreamFailed] = useState(false);
   const persons = detections.filter((d) => d.label === 'person').length;
 
   const toggle = (on) => {
@@ -118,7 +119,14 @@ export default function CameraPanel({ camera, detections }) {
         {webcam ? (
           <WebcamFeed onError={onWebcamError} />
         ) : camera.streamUrl ? (
-          <img className="feed" src={camera.streamUrl} alt="Flux caméra" />
+          <img
+            key={camera.streamUrl}
+            className="feed"
+            src={camera.streamUrl}
+            alt="Flux caméra"
+            onLoad={() => setStreamFailed(false)}
+            onError={() => setStreamFailed(true)}
+          />
         ) : (
           <MockFeed detections={detections} />
         )}
@@ -127,6 +135,14 @@ export default function CameraPanel({ camera, detections }) {
         </span>
       </div>
       {error && <Alert type="error" showIcon title={error} />}
+      {streamFailed && !webcam && camera.streamUrl && (
+        <Alert
+          type="warning"
+          showIcon
+          title="Flux caméra du Raspberry Pi inaccessible"
+          description={`Vérifier que le Pi est allumé et que ${camera.streamUrl} s'ouvre dans le navigateur.`}
+        />
+      )}
     </Panel>
   );
 }

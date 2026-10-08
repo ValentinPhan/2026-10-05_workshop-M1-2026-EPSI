@@ -18,14 +18,19 @@ Pas de matrice thermique ni de caméra gérée ici : `thermal` vaut null, `camer
 
 Un moteur pas à pas n'a pas de capteur de position : au lancement, la position courante = 0° (face avant).
 
-Usage : python3 sentinel_agent.py [--period 1] [--stream-url http://IP:8080/stream.mjpg] [--fake]
+Caméra : --camera lance pi/camera_stream.py (flux MJPEG sur le port --stream-port, caméra allumée seulement quand quelqu'un regarde).
+  --stream-url est l'adresse que le dashboard ouvre ; le provider SSH la déduit de l'adresse du Pi.
+
+Usage : python3 sentinel_agent.py [--period 1] [--camera] [--stream-port 8080] [--stream-url http://IP:8080/stream.mjpg] [--fake]
   --fake : aucune broche GPIO, valeurs synthétiques (test du protocole sur un PC, sans Raspberry).
 Dépendances : sudo apt install python3-gpiozero python3-lgpio   (+ celles de dht22_reader.py)
 """
 import argparse
 import json
 import math
+import os
 import random
+import subprocess
 import sys
 import threading
 import time
@@ -247,10 +252,23 @@ def read_commands(motor):
     stop_event.set()  # stdin fermé (connexion SSH coupée) : on arrête tout, moteur compris
 
 
+def start_camera(args):
+    """Lance le serveur de flux vidéo ; il s'arrête tout seul si l'agent disparaît (--parent-pid)."""
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "camera_stream.py")
+    cmd = [sys.executable, script, "--port", str(args.stream_port), "--width", str(args.width),
+           "--height", str(args.height), "--fps", str(args.fps), "--parent-pid", str(os.getpid())]
+    return subprocess.Popen(cmd, stderr=sys.stderr)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", type=float, default=1.0)
     ap.add_argument("--stream-url", default=None)
+    ap.add_argument("--camera", action="store_true", help="lance le serveur de flux vidéo (camera_stream.py)")
+    ap.add_argument("--stream-port", type=int, default=8080)
+    ap.add_argument("--width", type=int, default=640)
+    ap.add_argument("--height", type=int, default=480)
+    ap.add_argument("--fps", type=int, default=15)
     ap.add_argument("--fake", action="store_true")
     args = ap.parse_args()
 
@@ -259,6 +277,7 @@ def main():
         threading.Thread(target=target, daemon=True).start()
     threading.Thread(target=read_commands, args=(motor,), daemon=True).start()
     log(f"démarré (period={args.period}s, fake={args.fake}) — position moteur actuelle = 0°")
+    camera_proc = start_camera(args) if args.camera else None
 
     cpu_prev = [None, 0]
     while not stop_event.is_set():
@@ -267,13 +286,15 @@ def main():
             "ts": int(time.time() * 1000),
             "ultrasonic": {"distanceCm": ultra.read(), "maxRangeCm": MAX_RANGE_CM},
             "thermal": None,
-            "camera": {"streamUrl": args.stream_url, "width": 640, "height": 480, "fps": 15},
+            "camera": {"streamUrl": args.stream_url, "width": args.width, "height": args.height, "fps": args.fps},
             "motor": motor.state(),
             "environment": dict(dht.last),
             "system": system_stats(cpu_prev),
         }
         print(json.dumps(snapshot), flush=True)
         stop_event.wait(max(0.0, args.period - (time.monotonic() - loop_start)))
+    if camera_proc:
+        camera_proc.terminate()
     time.sleep(0.2)  # laisse le thread moteur couper les bobines
 
 

@@ -13,7 +13,8 @@
 //
 // Côté Pi : pi/sentinel_agent.py, lancé par SSH. Il écrit un snapshot JSON par ligne sur stdout et lit
 // les commandes moteur (JSON, une par ligne) sur stdin. Le Pi n'envoie que de la donnée BRUTE.
-// Mode local (AGENT_LOCAL=1) : l'agent est lancé en --fake sur ce PC, sans Raspberry (test du protocole).
+// Mode local (AGENT_LOCAL=1) : l'agent est lancé en --fake sur ce PC, sans Raspberry (test du protocole ;
+// SENTINEL_CAMERA_CMD permet d'y brancher une source vidéo, voir pi/camera_stream.py).
 import { spawn } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -33,7 +34,13 @@ export function createSshProvider(options, { tickMs = 1000 } = {}) {
   let timer = null;
   let stopped = false;
 
-  const agentArgs = [`--period ${tickMs / 1000}`, ...(options.streamUrl ? [`--stream-url ${shellQuote(options.streamUrl)}`] : [])];
+  // Flux vidéo : le Pi sert du MJPEG sur --stream-port ; le dashboard l'ouvre directement (pas de passage par le serveur).
+  const streamUrl = options.camera ? options.streamUrl || `http://${options.host}:${options.streamPort}/stream.mjpg` : '';
+  const agentArgs = [
+    `--period ${tickMs / 1000}`,
+    ...(options.camera ? ['--camera', `--stream-port ${options.streamPort}`] : []),
+    ...(streamUrl ? [`--stream-url ${shellQuote(streamUrl)}`] : []),
+  ];
 
   function feed(stdout) {
     let buffer = '';
@@ -64,7 +71,8 @@ export function createSshProvider(options, { tickMs = 1000 } = {}) {
   }
 
   function connectLocal() {
-    const child = spawn('python3', [LOCAL_AGENT, '--fake', '--period', String(tickMs / 1000)], { stdio: ['pipe', 'pipe', 'inherit'] });
+    const child = spawn('python3', [LOCAL_AGENT, '--fake', '--period', String(tickMs / 1000),
+      ...(options.camera ? ['--camera', '--stream-port', String(options.streamPort), '--stream-url', `http://localhost:${options.streamPort}/stream.mjpg`] : [])], { stdio: ['pipe', 'pipe', 'inherit'] });
     session = { stdin: child.stdin, close: () => child.kill() };
     child.stdin.on('error', () => {});
     feed(child.stdout);

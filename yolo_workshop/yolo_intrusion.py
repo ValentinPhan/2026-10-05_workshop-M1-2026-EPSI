@@ -4,6 +4,7 @@ from datetime import datetime
 import os
 import time
 import json
+import sys
 
 # =========================
 # CONFIGURATION
@@ -11,7 +12,11 @@ import json
 
 model = YOLO("yolov8n.pt")
 
-CAMERA = 0
+# Source vidéo : webcam du PC par défaut, ou le flux du Raspberry Pi :
+#   python yolo_intrusion.py http://<ip du Pi>:8080/stream.mjpg
+CAMERA = sys.argv[1] if len(sys.argv) > 1 else 0
+if isinstance(CAMERA, str) and CAMERA.isdigit():
+    CAMERA = int(CAMERA)
 CONFIDENCE_THRESHOLD = 0.5
 INTRUSION_TIMEOUT = 3
 
@@ -24,7 +29,7 @@ os.makedirs("captures", exist_ok=True)
 camera = cv2.VideoCapture(CAMERA)
 
 if not camera.isOpened():
-    print("❌ Impossible d'ouvrir la webcam")
+    print(f"❌ Impossible d'ouvrir la source vidéo : {CAMERA}")
     exit()
 
 intrusion_active = False

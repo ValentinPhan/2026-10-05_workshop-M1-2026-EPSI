@@ -58,7 +58,7 @@ En mode mock, trois boutons du journal d'alertes déclenchent un intrus, un pic 
 et reçoit les commandes moteur sur son entrée standard. Montage, câblage et mise en service pas à pas : **[pi/README.md](pi/README.md)**.
 
 Variables : `SSH_HOST`, `SSH_PORT`, `SSH_USER`, `SSH_KEY` (ou `SSH_PASSWORD`), `AGENT_COMMAND` (défaut `python3 ~/sentinel-x/pi/sentinel_agent.py`),
-`STREAM_URL` (flux MJPEG de la caméra), `AGENT_LOCAL=1` (agent simulé sur le PC, sans Raspberry).
+`CAMERA=0` (désactive le flux vidéo), `STREAM_PORT` (défaut 8080), `STREAM_URL` (remplace l'adresse du flux déduite de `SSH_HOST`), `AGENT_LOCAL=1` (agent simulé sur le PC, sans Raspberry).
 Le module thermique est **optionnel** : sans matrice AMG8833, `thermal` vaut `null`, le panneau et l'alerte de pic thermique sont désactivés.
 
 ## Capteur DHT22 (température / humidité)
@@ -85,7 +85,7 @@ Module 3 broches « V182 » : capteur **DHT22 / AM2302** (−40 à 80 °C ±0,5 
 ```
 server/src/  index.js (API + WS) · alerts.js · config.js · providers/ (mock, ssh, motor) · ai/ (mock, http, envAnomaly)
 client/src/  App.jsx · hooks/useSentinel.js · components/
-pi/          sentinel_agent.py (agent sur le Raspberry : ultrason, moteur, DHT22, système) · dht22_reader.py · README.md (montage)
+pi/          sentinel_agent.py (agent sur le Raspberry : ultrason, moteur, DHT22, système) · camera_stream.py (flux MJPEG) · dht22_reader.py · README.md (montage)
 arduino/     sentinel_io (firmware Uno de test : ultrason + moteur, liaison série)
 ai/          env_model.py (Isolation Forest sur le DHT22, pour le service IA Python)
 ```

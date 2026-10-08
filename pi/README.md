@@ -18,6 +18,12 @@ Matériel à prévoir en plus : fils Dupont mâle/femelle, une breadboard, **1 r
 
 `rpicam-hello --list-cameras` doit lister une caméra (avec une ancienne version du système : `libcamera-hello`). Si elle n'apparaît pas, rebrancher la nappe Pi éteint : **côté contacts métalliques vers le HDMI**, languette du connecteur bien rabattue.
 
+## Étape 2 bis — Flux vidéo vers le dashboard
+
+Rien à installer : `pi/camera_stream.py` (bibliothèque standard Python) est lancé automatiquement par l'agent. Il diffuse la caméra en MJPEG sur le port 8080 et n'allume la caméra que lorsqu'on regarde.
+Test, une fois le Pi installé (étape 3) : `python3 ~/sentinel-x/pi/camera_stream.py`, puis ouvrir `http://<ip du Pi>:8080/stream.mjpg` dans le navigateur du PC. Arrêter avec Ctrl+C.
+Webcam USB à la place de la caméra : `--cmd "ffmpeg -loglevel error -f v4l2 -i /dev/video0 -f mjpeg -q:v 5 -"`.
+
 ## Étape 3 — Installer les logiciels
 
 ```bash
@@ -86,6 +92,8 @@ Ouvrir http://localhost:5173 et vérifier : distance et radar réagissent à la 
 
 `PROVIDER=ssh AGENT_LOCAL=1 npm run dev` lance l'agent en mode simulé (`--fake`) sur le PC.
 
-## Pas encore fait
+## Flux vidéo et détection YOLO
 
-Le flux vidéo de la caméra vers le dashboard (`STREAM_URL`, flux MJPEG) n'est pas encore mis en place.
+Le dashboard ouvre le flux du Pi directement : `http://<ip du Pi>:8080/stream.mjpg` (déduit de `SSH_HOST` ; `CAMERA=0` le désactive, `STREAM_PORT` et `STREAM_URL` le modifient).
+Si l'image n'apparaît pas, le dashboard affiche un avertissement avec l'adresse à tester dans le navigateur.
+La détection YOLO lit le même flux, depuis le PC : `python yolo_workshop/yolo_intrusion.py http://<ip du Pi>:8080/stream.mjpg` (sans argument, elle utilise la webcam du PC).
