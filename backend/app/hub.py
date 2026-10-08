@@ -86,7 +86,8 @@ class Hub:
         self._sweeper: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._last_snapshot_ms: int | None = None  # dernier snapshot reçu du Pi (pour détecter sa perte)
-        self.monitor = ModuleMonitor(config.module_timeout_s, config.dht_stale_s, _now_ms(), config.edge.timeout_s)
+        absent = frozenset(getattr(provider, "absent_modules", ()))  # capteurs non montés sur le boîtier réel
+        self.monitor = ModuleMonitor(config.module_timeout_s, config.dht_stale_s, _now_ms(), absent, config.edge.timeout_s)
         self._watchdog: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
         self._monitor_interval_s = config.monitor_interval_s

@@ -47,10 +47,25 @@ class Thresholds:
 
 @dataclass(frozen=True)
 class SshConfig:
+    """Liaison avec le Raspberry (PROVIDER=ssh, voir providers/ssh.py)."""
+
     host: str = os.environ.get("SSH_HOST", "192.168.50.10")
     port: int = int(_num("SSH_PORT", 22))
     username: str = os.environ.get("SSH_USER", "pi")
-    private_key_path: str = os.environ.get("SSH_KEY", "")
+    private_key_path: str = os.environ.get("SSH_KEY", "")  # vide = clés par défaut de ~/.ssh et agent SSH
+    password: str = os.environ.get("SSH_PASSWORD", "")  # à éviter (clé conseillée) ; à mettre dans backend/.env
+    # Empreintes acceptées pour le Pi : fichier known_hosts (vide = ~/.ssh/known_hosts). "none" désactive la
+    # vérification (connexion sans savoir si c'est bien le Pi : à réserver aux tests).
+    known_hosts: str = os.environ.get("SSH_KNOWN_HOSTS", "")
+    # Commande lancée sur le Pi ; le backend y ajoute --period (et --stream-url si STREAM_URL est défini).
+    command: str = os.environ.get("SSH_COMMAND", "python3 -u ~/sentinel-x/raspberry-pi/sentinel_agent.py")
+    stream_url: str = os.environ.get("STREAM_URL", "")  # flux MJPEG du Pi (mode pull), recopié dans snapshot.camera
+    # AGENT_LOCAL=1 : lance l'agent sur ce PC en mode --fake, sans Raspberry (teste toute la chaîne SSH sauf le réseau)
+    local: bool = os.environ.get("AGENT_LOCAL", "0").lower() in ("1", "true", "yes")
+    # Capteurs absents du boîtier : jamais signalés en panne, panneau masqué (la matrice thermique n'est pas montée)
+    absent_modules: tuple[str, ...] = tuple(
+        m.strip() for m in os.environ.get("ABSENT_MODULES", "thermal").split(",") if m.strip()
+    )
 
 
 @dataclass(frozen=True)

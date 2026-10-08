@@ -19,12 +19,12 @@ brute au **PC** qui héberge un **backend Python** (FastAPI + YOLO + base de don
 backend/        API FastAPI + vision YOLO + comptes/BDD          (tourne sur le PC)
   app/          main.py hub.py alerts.py config.py auth.py db.py cli.py console.py
                 logger.py (journal JSON centralisé) · modules.py (santé des modules : perte de connexion)
-    providers/  mock.py (Pi simulé) · ssh.py (À IMPLÉMENTER) · motor.py
+    providers/  mock.py (Pi simulé) · ssh.py (Pi réel : asyncssh + raspberry-pi/sentinel_agent.py) · motor.py
     vision/     service.py (caméra+YOLO en thread) · detector.py
     ai/         mock_analyzer.py · local_analyzer.py · threat.py · env_anomaly.py
   models/       poids YOLO (yolov8n.pt, yolov8n-seg.pt, yolo26n.pt)
 frontend/       dashboard React 18 + Vite 6 + Ant Design 6 (thème sombre)
-raspberry-pi/   scripts qui tournent sur le Pi : dht22_reader.py, camera_push.py
+raspberry-pi/   scripts qui tournent sur le Pi : sentinel_agent.py (capteurs + servo), dht22_reader.py, camera_push.py ; README = montage
 firmware/esp8266/  Edge Node ESP8266 (PlatformIO) : MQ-2 + PIR en MQTTS ; backend : app/edge.py (EDGE=mqtt|mock|off)
 infra/          broker Mosquitto (Docker, mTLS + ACL) et PKI (pki/gen-certs.sh) ; docs/ : PLAN.md, mqtt-contract.md
 ml/             atelier IA hors ligne : vision/ (tests YOLO), environment/ (Isolation Forest DHT22)

@@ -8,9 +8,9 @@ const append = (arr, item) => [...arr, item].slice(-HISTORY_MAX);
 // Point d'historique compact (même forme que _sensor_point dans backend/app/hub.py)
 const sensorPoint = (s) => ({
   ts: s.ts,
-  distanceCm: s.ultrasonic.distanceCm,
-  avgC: s.thermal.avgC,
-  maxC: s.thermal.maxC,
+  distanceCm: s.ultrasonic?.distanceCm ?? null,
+  avgC: s.thermal?.avgC ?? null, // null : pas de matrice thermique sur le boîtier réel (provider ssh)
+  maxC: s.thermal?.maxC ?? null,
   envTempC: s.environment?.tempC ?? null,
   humidityPct: s.environment?.humidityPct ?? null,
 });

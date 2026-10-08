@@ -188,6 +188,8 @@ async def motor(cmd: Any = Body(None), admin: dict = Depends(require_admin)):
         state = await provider.send_motor_command(cmd)
     except ValueError as err:
         return error(400, str(err))
+    except ConnectionError as err:  # Raspberry injoignable (provider ssh)
+        return error(503, str(err))
     await hub.broadcast({"type": "motor", "data": state})
     await audit(admin, "motor", cmd)
     return state
