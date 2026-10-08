@@ -182,6 +182,33 @@ Raspberry Pi ──(brut : capteurs)──► backend ──► front   chemin r
 
 En mode mock, trois boutons du journal d'alertes déclenchent un intrus (capteurs), un pic thermique ou une fenêtre ouverte pour la démo.
 
+## Scénario de démo
+
+Déroulé proposé pour la soutenance, construit à partir des fonctionnalités du dépôt. Il n'a pas été chronométré : à répéter avant le passage.
+
+**Avant de commencer**
+1. `npm run dev:yolo` (YOLO sur la webcam du navigateur) ; `npm run dev` si aucune caméra n'est disponible (mock, sans détection).
+2. Ouvrir http://localhost:5173 et accepter la caméra. Mot de passe admin perdu : `cd backend && python -m app.cli passwd admin`.
+3. Vérifier `APP_ENV=prod` (par défaut) : en `dev`, aucune photo d'intrusion n'est enregistrée.
+4. Ouvrir deux sessions : une **admin** et une **agent** (compte créé si `AGENT_PASSWORD` est renseigné, ou depuis la gestion des comptes de l’admin).
+
+**Étapes**
+
+| # | Action | Ce que le jury voit |
+|---|---|---|
+| 1 | Connexion en **admin** | tous les modules : caméra, ultrason, thermique, environnement (DHT22), moteur, score de menace, alertes |
+| 2 | Se placer devant la caméra (mode `dev:yolo`) | carrés rouges et silhouettes dessinés par React, bandeau « INTRUSION DETECTED », alerte critique avec la **photo** en miniature ; une personne de plus = nouvelle photo et alerte « Nouvelle personne détectée » |
+| 3 | Moteur : position, pas, balayage auto | le radar ultrason tourne avec l'angle du moteur |
+| 4 | Approcher la main du capteur ultrason | alerte de proximité (< 80 cm) |
+| 5 | Souffler de l'air chaud / humide sur le DHT22 | courbes température / humidité, score d'anomalie IA et ses raisons (alerte à partir de 70) |
+| 6 | Mode mock : boutons du journal d'alertes **intrus**, **pic thermique**, **fenêtre ouverte** | alertes déclenchées à la demande, utile si le matériel ne répond pas |
+| 7 | Connexion en **agent** | mêmes données, mais commandes désactivées (« Lecture seule ») et simulations refusées (`403`) |
+| 8 | Retour en **admin** : journal d'audit | connexions, commandes moteur et changements de source vidéo tracés |
+
+Les alertes de proximité et d'environnement (étapes 4 et 5) dépendent des capteurs réels du Raspberry : le provider SSH n'est pas encore implémenté, ces capteurs sont donc simulés pour l'instant (voir « Brancher le vrai Raspberry Pi (SSH) »).
+
+**Plan B** : une démo enregistrée de secours est prévue vendredi matin (hors dépôt). Les clips H.264 des intrusions sont dans `backend/data/videos/` (`GET /api/videos`).
+
 ## API
 
 REST :
