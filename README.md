@@ -9,7 +9,7 @@ Deux modes, selon la variable `ANALYZER` :
 | Mode | Capteurs du Pi | Caméra / détection | Score de menace |
 |---|---|---|---|
 | `ANALYZER=mock` (défaut) | simulés (`PROVIDER=mock`) | faux flux + faux détecteur | heuristique factice |
-| `ANALYZER=local` | simulés pour l'instant, SSH à venir | **vraie caméra + YOLOv8** | fusion des capteurs avec les détections YOLO |
+| `ANALYZER=local` | simulés (`PROVIDER=mock`) ou **réels** (`PROVIDER=ssh`) | **vraie caméra + YOLOv8** | fusion des capteurs avec les détections YOLO |
 
 ## Matériel (liste finale)
 
@@ -33,13 +33,13 @@ backend/            API FastAPI + vision YOLO  (tourne sur le PC)
     cli.py          gestion des comptes en ligne de commande (mot de passe perdu)
     alerts.py       moteur d'alertes
     config.py       seuils et variables d'environnement
-    providers/      sources de données du Pi : mock.py · ssh.py (à implémenter) · motor.py
+    providers/      sources de données du Pi : mock.py · ssh.py (Raspberry réel) · motor.py
     vision/         caméra + YOLO dans un thread dédié : service.py · detector.py
     ai/             analyse : mock_analyzer.py · local_analyzer.py · threat.py · env_anomaly.py
   models/           poids des modèles (yolov8n.pt, yolo26n.pt)
   data/captures/    photos d'intrusion (générées, non versionnées)
 frontend/           dashboard React / Vite / Ant Design  (navigateur)
-raspberry-pi/       scripts qui tournent sur le Raspberry (lecture du DHT22)
+raspberry-pi/       scripts qui tournent sur le Raspberry : sentinel_agent.py (capteurs + servo), dht22_reader.py, camera_push.py ; README = montage
 ml/                 atelier de l'équipe IA, hors ligne : vision/ (tests YOLO) · environment/ (Isolation Forest DHT22)
 .vscode/            F5 : lance back + front
 ```
@@ -96,7 +96,12 @@ Le dashboard est protégé par un compte. Deux rôles :
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `PROVIDER` | `mock` | source des capteurs : `mock` \| `ssh` (à implémenter) |
+| `PROVIDER` | `mock` | source des capteurs : `mock` \| `ssh` (Raspberry réel, voir plus bas) |
+| `SSH_HOST` / `SSH_USER` / `SSH_KEY` / `SSH_PASSWORD` | `192.168.50.10` / `pi` / clés de `~/.ssh` / vide | connexion au Pi (`PROVIDER=ssh`) |
+| `SSH_KNOWN_HOSTS` | `~/.ssh/known_hosts` | empreintes acceptées pour le Pi ; `none` = pas de vérification (tests seulement) |
+| `SSH_COMMAND` | `python3 -u ~/sentinel-x/raspberry-pi/sentinel_agent.py` | agent lancé sur le Pi |
+| `ABSENT_MODULES` | `thermal` | capteurs non montés (`PROVIDER=ssh`) : jamais signalés en panne |
+| `AGENT_LOCAL` | `0` | `1` : l'agent tourne sur ce PC en mode simulé (test sans Raspberry) |
 | `ANALYZER` | `mock` | `mock` \| `local` (YOLO + fusion capteurs) |
 | `VISION_SOURCE` | `0` | image de YOLO : `0` = webcam de la machine du backend, URL du flux du Pi (`http://…`, `rtsp://…`), chemin d'un fichier vidéo (rejoué en boucle), `browser` = webcam du navigateur (le dashboard envoie ses images), ou `push` = images envoyées par le Raspberry (`raspberry-pi/camera_push.py`) |
 | `YOLO_MODEL` | `yolov8n.pt` | poids dans `backend/models/` (téléchargés si absents). `yolov8n-seg.pt` dessine la **silhouette** de chaque personne (≈ 2× plus lent), `yolov8n.pt` seulement des cadres |
@@ -177,10 +182,19 @@ Les clés JSON sont en camelCase (`distanceCm`, `maxC`…) : c'est le contrat av
 
 ## Brancher le vrai Raspberry Pi (SSH)
 
-Tout passe par un *provider* (`backend/app/providers/`). Pour remplacer le mock, il suffit d'implémenter
-[ssh.py](backend/app/providers/ssh.py) avec le même contrat que `mock.py` (`start`, `stop`, `get_snapshot`, `send_motor_command`)
-et la même forme de snapshot — le moteur d'alertes, l'API, l'analyseur et le front n'ont pas à changer.
-Le contrat et une piste d'implémentation (`asyncssh` + script Python côté Pi) sont documentés en tête de `ssh.py`.
+`PROVIDER=ssh` : le backend ouvre **une connexion SSH persistante** (`asyncssh`) vers le Pi et y lance
+[`raspberry-pi/sentinel_agent.py`](raspberry-pi/sentinel_agent.py). Montage, câblage et mise en service : [`raspberry-pi/README.md`](raspberry-pi/README.md).
+
+- **Protocole** : l'agent écrit **un snapshot JSON par ligne** sur stdout (même forme que le mock, `thermal: null`) et lit **une commande moteur JSON par ligne** sur stdin.
+  Les commandes sont validées par le backend (`motor.py`) **avant** l'envoi ; Pi injoignable ⇒ `POST /api/motor` répond `503`.
+- **Reconnexion automatique** (1, 2, 5 puis 10 s, indéfiniment) ; keepalive SSH toutes les 5 s. Pendant la coupure, la santé des modules signale « Perte de connexion : Raspberry Pi » (5 s) puis son retour.
+  Événements du journal : `provider.connect` / `provider.disconnect` ; le journal de l'agent (stderr) apparaît dans la console du backend, préfixé `[pi]`.
+- **Sécurité** : authentification par clé (ou mot de passe dans `backend/.env`), **empreinte du Pi vérifiée** (`~/.ssh/known_hosts`) : un autre appareil qui prend son IP est refusé.
+  Fin de session (backend arrêté, liaison coupée) ⇒ stdin de l'agent fermé ⇒ l'agent s'arrête et relâche le servo. Un agent orphelin (Wi-Fi coupé) est arrêté par le suivant (un seul à la fois sur les GPIO).
+- **Servo SG90** : pas de retour de position, l'angle affiché est la consigne déplacée à la vitesse demandée ; à la reconnexion, l'agent redémarre servo centré (0°).
+- **Sans Raspberry** : `PROVIDER=ssh AGENT_LOCAL=1` lance l'agent en mode `--fake` sur le PC (tout le chemin sauf le réseau).
+- Pas de matrice thermique sur le boîtier : `ABSENT_MODULES=thermal` (défaut) ; le dashboard masque le panneau quand `thermal` vaut `null`.
+- **Testé** : agent seul, chaîne complète avec l'agent local (dashboard compris), vrai SSH contre un serveur `asyncssh` local (connexion, commande, coupure / reconnexion, refus d'une empreinte inconnue, arrêt de l'agent). **Pas encore testé sur le vrai Raspberry** (GPIO, servo, HC-SR04).
 
 ## Capteur DHT22 (température / humidité)
 

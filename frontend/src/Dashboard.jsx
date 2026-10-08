@@ -71,7 +71,7 @@ export default function Dashboard({ user, onLogout }) {
               </Flex>
             </Col>
             <Col xs={24} md={12} xl={8}><UltrasonicPanel ultrasonic={snapshot.ultrasonic} angle={snapshot.motor.angle} history={history} /></Col>
-            <Col xs={24} md={12} xl={8}><ThermalPanel thermal={snapshot.thermal} history={history} /></Col>
+            {snapshot.thermal && <Col xs={24} md={12} xl={8}><ThermalPanel thermal={snapshot.thermal} history={history} /></Col>}
             <Col xs={24} md={12} xl={8}><EnvironmentPanel environment={snapshot.environment} analysis={analysis} history={history} /></Col>
             <Col xs={24} md={12} xl={8}><MotorPanel motor={snapshot.motor} sendMotor={sendMotor} readOnly={!isAdmin} /></Col>
             <Col xs={24} xl={isAdmin ? 8 : 16}>
