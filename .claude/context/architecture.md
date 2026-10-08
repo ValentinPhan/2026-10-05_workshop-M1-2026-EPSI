@@ -11,7 +11,7 @@
    │   └─ navigateur(s) : localhost:5173 (autres appareils du hotspot possibles)│
    └───────────────▲───────────────────────────────▲────────────────────────┘
                    │ SSH :22 (JSON capteurs ← / ordres moteur →)  │ WebSocket binaire /ws/camera (JPEG)
-                   │ [À IMPLÉMENTER : providers/ssh.py]            │ [camera_push.py — testé sans vrai Pi]
+                   │ [providers/ssh.py — testé sans vrai Pi]       │ [camera_push.py — testé sans vrai Pi]
           ┌────────┴───────────────────────────────────────────────┴────────┐
           │  Raspberry Pi (rejoint le Wi-Fi du PC, même sous-réseau)          │
           │  capteurs : ultrason, matrice thermique 8×8, DHT22, caméra, moteur│
@@ -47,7 +47,8 @@ Les callbacks du thread de vision repassent dans la boucle asyncio via `loop.cal
 ### Providers (source des données du Pi) — `providers/`
 Contrat : `name`, `async start(on_snapshot)`, `async stop()`, `get_snapshot()`, `async send_motor_command(cmd)` (+ `trigger_scenario` pour le mock).
 - `mock.py` : Pi simulé (intrus qui approche/reste/part, pic thermique, fenêtre ouverte, DHT22 avec inertie et lectures ratées, moteur avec balayage).
-- `ssh.py` : **squelette** (lève `NotImplementedError`). Plan : `asyncssh`, connexion persistante, script côté Pi qui imprime **une ligne JSON par mesure** sur stdout, ordres moteur envoyés sur son stdin (validés par `apply_motor_command`), **reconnexion automatique**.
+- `ssh.py` : `asyncssh`, **une connexion persistante**, lance `raspberry-pi/sentinel_agent.py` sur le Pi (`SSH_COMMAND`) : **un snapshot JSON par ligne** sur stdout, **une commande moteur JSON par ligne** sur stdin (validée par `apply_motor_command` avant l'envoi ; Pi absent ⇒ `ConnectionError` ⇒ `POST /api/motor` = 503). Reconnexion 1/2/5/10 s indéfiniment, keepalive 5 s, empreinte du Pi vérifiée (`~/.ssh/known_hosts` ou `SSH_KNOWN_HOSTS`, `none` = tests). Journal `provider.connect|disconnect` (une ligne par coupure), stderr de l'agent en console `[pi] …`. `AGENT_LOCAL=1` = agent `--fake` en sous-processus sur le PC. `absent_modules` (`ABSENT_MODULES`, défaut `thermal`) : `ModuleMonitor` les laisse `unknown` (jamais d'alerte).
+- `raspberry-pi/sentinel_agent.py` : servo **SG90** sur GPIO18 (gpiozero `AngularServo`, PWM pigpio si `pigpiod` tourne, sinon logiciel ; −90..90° ; pas de retour de position ; signal coupé à l'arrêt ; balayage ±60°), HC-SR04 GPIO23/24 (diviseur sur Echo), DHT22 GPIO4 (réutilise `dht22_reader.py`), stats `/proc`. `thermal: null`. stdin fermé ⇒ arrêt + servo relâché ; **un seul agent à la fois** (`/tmp/sentinel_agent.pid`, l'ancien reçoit SIGTERM). `--fake` sans GPIO. Montage : `raspberry-pi/README.md`.
 - `motor.py` : commandes `{type:'move',angle}` `{type:'step',delta}` `{type:'sweep',enabled}` `{type:'speed',value}` `{type:'stop'}` ; angle −90..90°, vitesse 5..90 °/s.
 
 **Snapshot brut** (clés en camelCase = contrat avec le front) :
@@ -101,7 +102,7 @@ REST : `/api/health` (public) · `/api/auth/{login,logout,me}` · `/api/snapshot
 WebSocket JSON `/ws` : `hello` (état complet : provider, snapshot, analysis, vision, history{sensors,threat}, alerts) · `snapshot` · `analysis` · `alert` · `motor` · `vision`. Détails et exemples dans `README.md`.
 
 ### Configuration (`config.py`, variables d'environnement ou `backend/.env`)
-`PROVIDER` (mock|ssh) · `ANALYZER` (mock|local) · `TICK_MS` · `VISION_SOURCE` · `YOLO_MODEL` · `YOLO_CONF` (0.5) · `YOLO_IMGSZ` (640) · `VISION_FPS` (10) · `VISION_ANNOTATE` · `INTRUSION_TIMEOUT_S` (3) · `CAPTURE_SETTLE_S` (1.5) ·
+`PROVIDER` (mock|ssh) · `SSH_HOST|PORT|USER|KEY|PASSWORD|KNOWN_HOSTS|COMMAND` · `STREAM_URL` · `AGENT_LOCAL` · `ABSENT_MODULES` · `ANALYZER` (mock|local) · `TICK_MS` · `VISION_SOURCE` · `YOLO_MODEL` · `YOLO_CONF` (0.5) · `YOLO_IMGSZ` (640) · `VISION_FPS` (10) · `VISION_ANNOTATE` · `INTRUSION_TIMEOUT_S` (3) · `CAPTURE_SETTLE_S` (1.5) ·
 `CAPTURE_MAX_WIDTH`/`CAPTURE_JPEG_QUALITY` (640/70) · `CAPTURES_DIR` · **`APP_ENV`** (dev|prod) · **`LOG_DIR`** · **`MONITOR_INTERVAL_S`** (60) · **`RECORD_VIDEO`** (auto) · `RECORD_PREROLL_S` · `RECORD_CRF` · `RECORD_MAX_WIDTH` · `RECORD_MAX_S` · `RECORD_KEEP_MB` · `VIDEOS_DIR` · **`MODULE_TIMEOUT_S`** (5) · **`DHT_STALE_S`** (30) · `DATABASE_URL` · `ADMIN_USERNAME`/`ADMIN_PASSWORD` · `AGENT_USERNAME`/`AGENT_PASSWORD` (champs de config présents ; **la création automatique de l'agent n'est plus dans `bootstrap_admin`** : voir l'état) · `DEVICE_TOKEN` · `SESSION_HOURS` · `COOKIE_SECURE`. Seuils d'alerte dans `Thresholds` (80 cm, 45 °C, 0.6, score DHT22 70).
 
 ## 3. Frontend (`frontend/`)

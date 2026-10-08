@@ -53,7 +53,7 @@ export function SystemPanel({ system }) {
       {load('CPU', system.cpuPct)}
       {load('RAM', system.ramPct)}
       <Flex gap={32} wrap>
-        <Stat title="Temp. CPU" value={system.cpuTempC} suffix="°C" />
+        <Stat title="Temp. CPU" value={system.cpuTempC ?? '—'} suffix={system.cpuTempC != null && '°C'} />
         <Stat title="Uptime" value={fmtUptime(system.uptimeS)} />
       </Flex>
     </Panel>

@@ -7,5 +7,5 @@ def create_provider(config: Config):
     if config.provider == "mock":
         return MockProvider(tick_ms=config.tick_ms)
     if config.provider == "ssh":
-        return create_ssh_provider(config.ssh)
+        return create_ssh_provider(config.ssh, tick_ms=config.tick_ms)
     raise ValueError(f"PROVIDER inconnu : {config.provider} (mock | ssh)")

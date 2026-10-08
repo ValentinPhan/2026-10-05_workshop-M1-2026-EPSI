@@ -12,6 +12,7 @@ Modules surveillés (une entrée chacun dans l'état renvoyé) :
 Quand le Raspberry est injoignable, ses capteurs ne sont pas évalués (indéterminés) : une seule perte est signalée,
 la bonne. Chaque état est « ok », « lost » ou « unknown » (pas encore de preuve dans un sens ou dans l'autre).
 Seuls les passages ok/unknown -> lost et lost -> ok produisent une transition (donc un événement du journal).
+Un capteur absent du boîtier (`absent`, ex. la matrice thermique non montée) reste « unknown » : jamais d'alerte.
 Logique pure, sans I/O : le Hub l'appelle périodiquement et journalise / alerte (voir hub._watch_modules).
 """
 from typing import Any
@@ -36,7 +37,8 @@ def _num(value: Any) -> bool:
 
 
 class ModuleMonitor:
-    def __init__(self, timeout_s: float, dht_stale_s: float, started_ms: int):
+    def __init__(self, timeout_s: float, dht_stale_s: float, started_ms: int, absent: frozenset[str] = frozenset()):
+        self._absent = absent
         self._timeout_ms = timeout_s * 1000
         self._dht_stale_ms = dht_stale_s * 1000
         self._started_ms = started_ms
@@ -96,6 +98,8 @@ class ModuleMonitor:
 
         if analysis is not None:
             health["ai"] = (True, None) if analysis.get("ok") else (False, analysis.get("error") or "modèle IA indisponible")
+        for name in self._absent & health.keys():
+            health[name] = (None, None)  # non monté : ni panne ni retour à signaler
         return health
 
     def check(self, now: int, snapshot: dict | None, snapshot_at: int | None, vision: dict | None, analysis: dict | None) -> list[dict]:
