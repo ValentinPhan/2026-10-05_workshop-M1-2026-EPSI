@@ -59,11 +59,16 @@ scripts/            run-api.mjs : lance l'API avec le Python du venv (backend/.v
 
 ## Installation
 
+**Prérequis** : Node.js 18 ou plus (Vite 6, npm inclus), Python 3.11 ou plus, Git. Pour la vision YOLO : ~1 Go de disque (torch) et une webcam.
+
 ```bash
-# Front
+git clone https://github.com/ValentinPhan/2026-10-05_workshop-M1-2026-EPSI.git
+cd 2026-10-05_workshop-M1-2026-EPSI
+
+# Front (workspace npm : installe aussi frontend/ et concurrently)
 npm install
 
-# Back (Python 3.11+)
+# Back
 cd backend
 python -m venv .venv
 .venv\Scripts\activate          # Windows   (Linux/Mac : source .venv/bin/activate)
@@ -71,7 +76,20 @@ pip install -r requirements.txt
 
 # Vision YOLO (optionnel, nécessaire pour ANALYZER=local — installe aussi torch, ~1 Go)
 pip install -r requirements-vision.txt
+
+# Configuration (optionnel, voir « Variables d'environnement du back »)
+cp .env.example .env            # Windows : copy .env.example .env
 ```
+
+- **Sans YOLO** : `requirements.txt` suffit pour le mode mock (`npm run dev`). `requirements-vision.txt` n'est nécessaire que pour `npm run dev:yolo`.
+- **PostgreSQL** : rien à installer, SQLite est le défaut. Le pilote PostgreSQL est dans `requirements.txt` ; il suffit de définir `DATABASE_URL`.
+- **Premier lancement** : le compte `admin` est créé et son mot de passe aléatoire est affiché **une seule fois dans la console du backend** (ou fixé par `ADMIN_PASSWORD` dans `backend/.env`). Mot de passe perdu : `cd backend && python -m app.cli passwd admin`.
+- **Poids YOLO** : téléchargés automatiquement dans `backend/models/` au premier lancement en mode YOLO.
+- **Atelier IA (`ml/`)**, hors dashboard : `pip install -r ml/vision/requirements.txt` ou `pip install -r ml/environment/requirements.txt` (voir `ml/README.md`).
+- **Raspberry Pi** : les dépendances du Pi sont à part (`python3-picamera2`, `websockets`, etc.) ; voir `raspberry-pi/README.md` et la section « Brancher le vrai Raspberry Pi (SSH) ».
+- **Linux / Mac** : les tâches et configurations de `.vscode/` utilisent `cmd.exe` et `backend\.venv\Scripts\python.exe` ; il faut les adapter (`Scripts` → `bin`). La ligne de commande (`npm run dev`, `npm run dev:yolo`) fonctionne telle quelle.
+
+Vérifier l'installation : `npm run dev`, puis ouvrir http://localhost:5173 (dashboard) et http://localhost:4000/docs (API).
 
 ## Lancer
 
