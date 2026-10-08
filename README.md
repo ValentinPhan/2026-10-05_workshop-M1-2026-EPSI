@@ -123,7 +123,23 @@ Le dashboard est protégé par un compte. Deux rôles :
 | `DATABASE_URL` | SQLite `backend/data/sentinel.db` | base de données (`postgresql+psycopg://…` pour PostgreSQL) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / aléatoire | compte admin créé au premier lancement |
 | `DEVICE_TOKEN` | vide | jeton du Raspberry pour `/ws/camera` (vide = le Pi est refusé) |
+| `AGENT_USERNAME` / `AGENT_PASSWORD` | `agent` / vide | compte agent (consultation seule), créé avec l'admin seulement si `AGENT_PASSWORD` est renseigné |
 | `SESSION_HOURS` / `COOKIE_SECURE` | `12` / `0` | durée des sessions / cookie réservé au HTTPS |
+| `APP_ENV` | `prod` | `prod` \| `dev`. En `dev`, aucune photo d'intrusion n'est enregistrée (l'alerte reste créée, sans image) |
+| `VISION_ZONE` | `camera_1` | nom de la zone associée aux alertes d'intrusion |
+| `VISION_JPEG_QUALITY` | `70` | qualité JPEG des images envoyées au dashboard |
+| `RECORD_VIDEO` | `auto` | clip vidéo H.264 par intrusion : `auto` = activé en prod, désactivé en dev ; `1` / `0` pour forcer |
+| `RECORD_PREROLL_S` / `RECORD_MAX_S` | `2` / `180` | secondes avant la détection incluses dans le clip / durée max d'un clip (au-delà, coupé en parties) |
+| `RECORD_CRF` / `RECORD_MAX_WIDTH` | `28` / `640` | qualité H.264 (23 = meilleure et plus lourd, 32 = plus léger) / largeur max du clip |
+| `RECORD_KEEP_MB` | `1000` | quota du dossier des clips : les plus anciens sont supprimés au-delà |
+| `VIDEOS_DIR` | `backend/data/videos` | dossier des clips vidéo |
+| `LOG_DIR` | `backend/data/logs` | journal JSON des événements (un fichier par jour) |
+| `MONITOR_INTERVAL_S` | `60` | relevé périodique de tous les capteurs dans le journal JSON (min. 1) |
+| `MODULE_TIMEOUT_S` / `DHT_STALE_S` | `5` / `30` | délai (s) sans snapshot avant de déclarer le Raspberry perdu / âge max (s) de la dernière mesure DHT22 |
+| `HISTORY_SIZE` / `ALERTS_SIZE` | `120` / `50` | taille des historiques de mesures / des alertes gardées en mémoire |
+| `SSH_HOST` / `SSH_PORT` | `192.168.50.10` / `22` | Raspberry joint par `PROVIDER=ssh` (à implémenter) |
+| `SSH_USER` / `SSH_KEY` | `pi` / vide | utilisateur et chemin de la clé privée SSH |
+| `API_PORT` | `4000` | port de l'API, lu par `scripts/run-api.mjs` et par le proxy de Vite (pas par `config.py`) |
 
 Ces variables peuvent aussi être mises dans `backend/.env` (ignoré par git, modèle : `backend/.env.example`).
 
