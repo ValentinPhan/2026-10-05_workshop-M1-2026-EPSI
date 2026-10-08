@@ -90,6 +90,7 @@ Last Will : `{"state": "offline"}`.
 - `EDGE=mock` : ESP simulé (défaut avec `PROVIDER=mock`), boutons « Simuler une fuite de gaz / une présence » dans le dashboard. `EDGE=off` : désactivé.
 - Alertes : **gaz** ≥ `GAS_ALERT_RAW` (600 par défaut, *critical*), **présence PIR** (*warning*), **perte de l'ESP** (module `esp8266`, *critical*) si broker injoignable, Last Will `offline`, ou aucun message depuis `EDGE_TIMEOUT_S` (10 s).
 - API : `GET /api/edge` (compte requis) ; WebSocket `/ws` : `hello.edge` puis un message `edge` à chaque mesure.
+- Score de menace (`backend/app/ai/threat.py`) : le PIR compte pour 10 % de la somme pondérée ; le gaz impose un plancher (0 sous la moitié de `GAS_ALERT_RAW`, 70 = « Menace » au seuil). Un boîtier hors ligne ou muet ne compte pas.
 
 ## 7. Tests rapides (depuis `infra/`, broker lancé)
 

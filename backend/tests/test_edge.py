@@ -158,3 +158,16 @@ def test_api_edge_mock_end_to_end(client):
 
     assert client.get("/api/modules").json()["esp8266"]["state"] in ("ok", "unknown")
     assert client.post("/api/mock/nope").status_code == 400
+
+
+def test_api_gas_raises_threat_score(client):
+    """La fuite de gaz simulée sur l'ESP fait monter le score de menace jusqu'à « Menace » (plancher du gaz)."""
+    with client.websocket_connect("/ws") as ws:
+        json.loads(ws.receive_text())  # hello
+        client.post("/api/mock/gas")
+        deadline, best = time.time() + 25, 0
+        while time.time() < deadline and best < 60:
+            m = json.loads(ws.receive_text())
+            if m["type"] == "analysis" and m["data"]["ok"]:
+                best = max(best, m["data"]["threat"]["score"])
+        assert best >= 60

@@ -227,7 +227,7 @@ async def vision_analyze(request: Request, annotated: bool = False, _admin: dict
     except ValueError as err:
         return error(400, str(err))
     env = hub.analysis.get("environment") if hub.analysis else None
-    threat = threat_score(hub.latest, result["detections"], env) if hub.latest else None
+    threat = threat_score({**hub.latest, "edge": hub.edge_state()}, result["detections"], env) if hub.latest else None
     return {**result, "threat": threat}
 
 

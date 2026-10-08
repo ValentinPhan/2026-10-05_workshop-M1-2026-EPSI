@@ -60,13 +60,13 @@ Défaut `mock` avec `PROVIDER=mock`, sinon `off`. Contrat : `name`, `async start
 - `apply_message` (logique pure, testée) valide chaque message (topic, ≤ 512 octets, JSON, types et bornes), compte les messages perdus (`seq`), gère le Last Will `offline`.
 - `state()` = `{source, broker, connected, error, gasThreshold, nodes:[{node, online, fw, ip, seq, lost, readAt, lastSeenMs, gasRaw, pir, rssi, tempC, humidityPct}]}` ; diffusé en message WS `edge` à chaque message de l'ESP, inclus dans `hello`, dans `context()` du journal et dans `GET /api/edge`.
 - Alertes : `gas_<node>` (critical, MQ-2 ≥ `GAS_ALERT_RAW` = 600) et `presence_<node>` (warning, PIR) ; module `esp8266` (critical) : broker injoignable, `offline`, ou muet depuis `EDGE_TIMEOUT_S` (10 s). Journal : `edge.connected|disconnected|error|invalid|node_online|node_offline|pir`.
-- **Pas branché dans le score de menace** (`threat.py`) : à décider avec l'équipe IA.
+- **Dans le score de menace** : le Hub joint `edge_state()` au snapshot passé à l'analyseur (`snapshot["edge"]`, aussi pour `POST /api/vision/analyze`) ; PIR = 10 % de la somme pondérée, gaz = plancher (voir `threat.py`). Boîtier hors ligne ou muet > `EDGE_TIMEOUT_S` : ignoré.
 
 ### Analyse (`ai/`) — `ANALYZER=mock|local`
 Contrat : `analyze(snapshot) -> {detections:[{label,confidence,bbox{x,y,w,h},polygon?}], threat:{score 0-100,label}, environment?}` — **synchrone** (appelée dans un thread).
 - `mock_analyzer.py` : faux modèle (déduit une « personne » de la tache chaude de la matrice + ultrason, latence 150–400 ms simulée).
 - `local_analyzer.py` : détections **YOLO réelles** (`vision.latest_detections()`, vides si > 2 s) + `EnvDetector` + `threat_score`.
-- `threat.py` : **score de menace = 45 % personne (confiance YOLO) + 25 % proximité ultrason + 15 % chaleur + 15 % anomalie d'environnement** ; libellé Calme < 30 ≤ Vigilance < 60 ≤ Menace.
+- `threat.py` : **score de menace = 40 % personne (confiance YOLO) + 20 % proximité ultrason + 10 % PIR (ESP8266) + 15 % chaleur + 15 % anomalie d'environnement**, puis **plancher gaz** : `max(somme, 70 × risque gaz)`, risque gaz = 0 sous la moitié de `GAS_ALERT_RAW`, 1 au seuil (une fuite seule = « Menace » ; dans la somme elle serait diluée). Libellé Calme < 30 ≤ Vigilance < 60 ≤ Menace. Tests : `backend/tests/test_threat.py`.
 - `env_anomaly.py` : détecteur d'anomalies DHT22 **en ligne**, sans dépendance (z-score glissant sur température, humidité, pentes ; apprentissage 30 mesures ≈ 1 min ; garde-fous : > 45 °C ou +2 °C/min ⇒ 100, air proche de la saturation ⇒ ≥ 70). Sortie `{score,label Apprentissage|Normal|Inhabituel|Anomalie,dewPointC,reasons[],learning}`.
   Le vrai modèle (Isolation Forest, `ml/environment/env_model.py`) **n'est pas branché** : à intégrer dans `LocalAnalyzer`.
 
