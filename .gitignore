@@ -15,3 +15,12 @@ ml/vision/runs/
 
 # réglages personnels de Claude Code (le reste de .claude/ est versionné)
 .claude/settings.local.json
+
+# PKI Sentinel-X (clés privées, jamais versionnées)
+infra/pki/out/
+*.key
+
+# Firmware ESP8266 : secrets locaux et fichiers de compilation
+firmware/esp8266/include/config.h
+firmware/esp8266/include/certs.h
+firmware/esp8266/.pio/

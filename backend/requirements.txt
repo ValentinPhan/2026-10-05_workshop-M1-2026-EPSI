@@ -3,3 +3,4 @@ uvicorn[standard]>=0.32
 sqlalchemy>=2.0
 psycopg[binary]>=3.2  # pilote PostgreSQL (inutile avec SQLite, le défaut)
 asyncssh>=2.14  # liaison avec le Raspberry (PROVIDER=ssh)
+paho-mqtt>=2.1  # Edge Node ESP8266 via MQTTS (EDGE=mqtt)

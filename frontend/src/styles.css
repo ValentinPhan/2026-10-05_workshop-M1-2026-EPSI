@@ -12,6 +12,7 @@
   --c-threat: #ff5a5f;
   --c-env-temp: #f5a524;
   --c-env-hum: #6c8cff;
+  --c-gas: #3ecf8e;
 }
 
 body { margin: 0; }

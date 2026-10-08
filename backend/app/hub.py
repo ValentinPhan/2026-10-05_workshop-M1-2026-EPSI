@@ -7,6 +7,8 @@
                   image avec ses propres résultats (positions des carrés, silhouettes, menace) : le
                   dashboard dessine les carrés rouges lui-même, synchronisés avec l'image. Ses
                   événements d'intrusion (alerte avec photo) partent sur /ws.
+  Edge Node     : l'ESP8266 (gaz, présence) arrive par MQTTS, indépendamment du Pi (voir edge.py) ; chaque message
+                  met à jour l'état `edge`, diffusé sur /ws (message `edge`), et passe par les alertes gaz / PIR.
 
 Format d'un message /ws/video :  [4 octets : taille N de l'en-tête, big-endian] [N octets : JSON UTF-8] [JPEG]
   en-tête = {ts, width, height, annotated, personCount, detections: [{label, confidence, bbox, polygon?}], threat}
@@ -61,8 +63,9 @@ class VideoClient:
 
 
 class Hub:
-    def __init__(self, config: Config, provider, analyzer, vision=None, database=None):
+    def __init__(self, config: Config, provider, analyzer, vision=None, database=None, edge=None):
         self.provider = provider
+        self.edge = edge  # Edge Node ESP8266 (EDGE=mqtt|mock), None si EDGE=off
         self.analyzer = analyzer
         self.vision = vision
         self.db = database  # historique des alertes (optionnel : sans base, tout reste en mémoire)
@@ -84,7 +87,7 @@ class Hub:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._last_snapshot_ms: int | None = None  # dernier snapshot reçu du Pi (pour détecter sa perte)
         absent = frozenset(getattr(provider, "absent_modules", ()))  # capteurs non montés sur le boîtier réel
-        self.monitor = ModuleMonitor(config.module_timeout_s, config.dht_stale_s, _now_ms(), absent)
+        self.monitor = ModuleMonitor(config.module_timeout_s, config.dht_stale_s, _now_ms(), absent, config.edge.timeout_s)
         self._watchdog: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
         self._monitor_interval_s = config.monitor_interval_s
@@ -98,6 +101,7 @@ class Hub:
             "analyzer": self.analyzer.name,
             "sensors": self.latest,  # dernier snapshot du Pi : ultrason, thermique, environnement, moteur, système, caméra
             "analysis": self.analysis,  # dernière analyse IA : menace, anomalies d'environnement, détections
+            "edge": self.edge_state(),  # Edge Node ESP8266 : gaz, présence, liaison MQTT
             "vision": self.vision_status(),
             "activeAlerts": self.alerts.active(),
             "modules": self.monitor.states(),  # santé de chaque module (ok / lost / unknown, depuis quand, pourquoi)
@@ -121,10 +125,14 @@ class Hub:
     def vision_status(self) -> dict:
         return self.vision.status() if self.vision else {"enabled": False}
 
+    def edge_state(self) -> dict | None:
+        return self.edge.state() if self.edge else None
+
     def hello(self) -> dict:
         return {
             "provider": self.provider.name,
             "snapshot": self.latest,
+            "edge": self.edge_state(),
             "analysis": self.analysis,
             "vision": self.vision_status(),
             "history": {"sensors": list(self.sensor_history), "threat": list(self.threat_history)},
@@ -226,6 +234,22 @@ class Hub:
         logger.emit("vision.status", f"Vision : {status['state']}", level="error" if status["state"] == "error" else "info", status=status)
         asyncio.create_task(self.broadcast({"type": "vision", "data": status}))
 
+    # ---- Edge Node ESP8266 (appelé dans la boucle asyncio, voir edge.py) ----
+    def _on_edge(self, info: dict) -> None:
+        if info.get("changed") and info["kind"] == "status":
+            online = info["online"]
+            log.info((green if online else red)(f"ESP8266 {info['node']} {'en ligne' if online else 'HORS LIGNE'}"))
+            logger.emit("edge.node_online" if online else "edge.node_offline", f"Edge Node {info['node']} {'en ligne' if online else 'hors ligne'}",
+                        level="info" if online else "error", node=info["node"])
+        elif info.get("changed") and info.get("type") == "pir":
+            logger.emit("edge.pir", f"PIR de {info['node']} : {'présence' if info['pir'] else 'plus de présence'}", node=info["node"], pir=info["pir"])
+        asyncio.create_task(self._publish_edge())
+
+    async def _publish_edge(self) -> None:
+        state = self.edge_state()
+        await self.broadcast({"type": "edge", "data": state})
+        await self._broadcast_alerts(self.alerts.evaluate_edge(state))
+
     # ---- chemin rapide ----
     async def on_snapshot(self, raw: dict) -> None:
         self.latest = raw
@@ -316,7 +340,7 @@ class Hub:
 
     async def _check_modules(self) -> None:
         vision = self.vision_status() if self.vision else None
-        transitions = self.monitor.check(_now_ms(), self.latest, self._last_snapshot_ms, vision, self.analysis)
+        transitions = self.monitor.check(_now_ms(), self.latest, self._last_snapshot_ms, vision, self.analysis, self.edge_state())
         for t in transitions:
             if t["to"] == "lost":
                 since = f"depuis {(_now_ms() - t['lastOkMs']) / 1000:.0f} s" if t["lastOkMs"] else "jamais joint"
@@ -357,6 +381,8 @@ class Hub:
         self._watchdog = asyncio.create_task(self._watch_modules())
         self._monitor_task = asyncio.create_task(self._monitor_log())
         await self.provider.start(self.on_snapshot)
+        if self.edge:
+            await self.edge.start(lambda info: self._from_vision_thread(self._on_edge, info))  # thread MQTT -> boucle
         if self.vision:
             self.vision.start(
                 on_frame=lambda jpeg, meta: self._from_vision_thread(self._on_frame, jpeg, meta),
@@ -376,3 +402,5 @@ class Hub:
         if self.vision:
             await asyncio.to_thread(self.vision.stop)
         await self.provider.stop()
+        if self.edge:
+            await self.edge.stop()
