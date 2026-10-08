@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # Génère la PKI Sentinel-X (ECDSA P-256, léger pour l'ESP8266) dans infra/pki/out/.
 # Usage : ./gen-certs.sh [CN supplémentaires...]   ex. ./gen-certs.sh esp-node-02
+# BROKER_IP = adresse du PC sur le hotspot (défaut 192.168.137.1, hotspot Windows) : BROKER_IP=10.0.0.5 ./gen-certs.sh
+# Pour chaque boîtier esp-*, écrit aussi out/<cn>.h (certificats à copier dans firmware/esp8266/include/certs.h).
 # Les clés privées ne doivent JAMAIS être commitées (out/ est dans .gitignore).
 set -euo pipefail
 
 cd "$(dirname "$0")"
 OUT=out
 DAYS=825
+BROKER_IP=${BROKER_IP:-192.168.137.1}
 mkdir -p "$OUT"
 
 newkey() { openssl ecparam -name prime256v1 -genkey -noout -out "$1"; }
@@ -30,11 +33,23 @@ sign() {
   echo "Certificat $cn créé"
 }
 
-sign mosquitto "subjectAltName=DNS:mosquitto,DNS:sentinel.local,DNS:localhost,IP:10.50.0.1,IP:127.0.0.1
+sign mosquitto "subjectAltName=DNS:mosquitto,DNS:localhost,IP:$BROKER_IP,IP:127.0.0.1
 extendedKeyUsage=serverAuth"
 
-for cn in api ia-anomaly ia-vision esp-node-01 "$@"; do
+for cn in backend esp-node-01 "$@"; do
   sign "$cn" "extendedKeyUsage=clientAuth"
+done
+
+# En-tête C++ pour le firmware : CA + certificat et clé du boîtier (PEM en raw string literals)
+for crt in "$OUT"/esp-*.crt; do
+  cn=$(basename "$crt" .crt)
+  {
+    echo "// Généré par infra/pki/gen-certs.sh pour $cn — NE PAS COMMITER (contient une clé privée)"
+    echo "#pragma once"
+    echo "static const char CA_CERT[] PROGMEM = R\"PEM($(cat "$OUT/ca.crt"))PEM\";"
+    echo "static const char CLIENT_CERT[] PROGMEM = R\"PEM($(cat "$OUT/$cn.crt"))PEM\";"
+    echo "static const char CLIENT_KEY[] PROGMEM = R\"PEM($(openssl pkey -in "$OUT/$cn.key"))PEM\";"
+  } > "$OUT/$cn.h"
 done
 
 chmod 644 "$OUT"/*.crt

@@ -24,10 +24,10 @@
 - **Vidéo du Pi — 3 options, toutes gérées par `VISION_SOURCE`** : (1) `push` (recommandé) : le Pi envoie ses JPEG en WebSocket sur `/ws/camera` ; (2) pull : le Pi expose un flux MJPEG/RTSP, on met l'URL dans `VISION_SOURCE` ;
   (3) `browser` : la webcam du navigateur. **Pas de MQTT pour la vidéo** (pas de notion de « dernière image », broker en plus) et **pas dans la session SSH** (une rafale d'images retarderait les ordres moteur).
   ≈ 15 Ko/image 640×480 → ~1,3 Mbit/s à 10 img/s.
-- Le sujet d'origine parlait d'un **ESP8266 → MQTTS → Mosquitto**. Le code actuel ne contient **ni ESP8266 ni MQTT** (voir `etat-et-decisions.md`, « écarts »).
+- **Edge Node ESP8266** (exigé par le sujet, décision du 8 octobre : on le garde, **en plus** du Pi) : MQ-2 (gaz) + PIR → **MQTTS** (TLS 1.2, certificat client ECDSA, ACL par CN) → **Mosquitto en Docker sur le PC** (`infra/docker-compose.yml`, port 8883) → backend (`app/edge.py`, `EDGE=mqtt`). Liaison **indépendante du Pi**. Contrat : `docs/mqtt-contract.md` ; firmware : `firmware/esp8266/` ; PKI : `infra/pki/gen-certs.sh` (`infra/pki/out/` ignoré par git, `BROKER_IP` = IP du PC sur le hotspot, défaut 192.168.137.1).
 - Une pile serveur Docker (Postgres, MQTT) existe **hors dépôt** chez l'utilisateur (`C:\Users\noamg\Bureau\sentinel-x-server`, retirée du dépôt par l'utilisateur). Son conteneur Postgres `sentinel-postgres`
-  (postgres:17) **ne publie pas le port 5432** sur la machine : pour que le backend l'utilise, il faut `ports: ["127.0.0.1:5432:5432"]` dans son compose.
-- Des commits « plan d'action `docs/PLAN.md` » et « contrat MQTT + squelette docker-compose » existent sur des branches distantes `origin/claude/*` non fusionnées : à lire (`git show origin/<branche>:docs/PLAN.md`) avant de refaire un plan.
+  (postgres:17) **ne publie pas le port 5432** sur la machine : pour que le backend l'utilise, il faut `ports: ["127.0.0.1:5432:5432"]` dans son compose. Le broker de l'ESP est celui de `infra/` (mTLS + ACL), pas celui de cette pile.
+- Plan d'action : `docs/PLAN.md` (§ 2 et 4 bis à jour au 8 octobre ; le reste = plan initial du lundi).
 
 ## 2. Backend (`backend/app/`)
 
@@ -52,6 +52,14 @@ Contrat : `name`, `async start(on_snapshot)`, `async stop()`, `get_snapshot()`, 
 
 **Snapshot brut** (clés en camelCase = contrat avec le front) :
 `{ts, ultrasonic:{distanceCm,maxRangeCm}, thermal:{avgC,maxC,grid[8][8]}, camera:{streamUrl,width,height,fps}, motor:{angle,target,speed,mode,moving}, environment:{tempC,humidityPct,readAt}, system:{link,cpuPct,ramPct,cpuTempC,uptimeS}}`
+
+### Edge Node ESP8266 (`edge.py`) — `EDGE=mqtt|mock|off`
+Défaut `mock` avec `PROVIDER=mock`, sinon `off`. Contrat : `name`, `async start(notify)`, `async stop()`, `state()` (+ `trigger_scenario` pour le mock : `gas`, `presence`).
+- `MqttEdge` : paho-mqtt (≥ 2.1) dans **son propre thread** (`loop_start`, reconnexion 1 → 30 s) ; ses callbacks repassent dans la boucle via `Hub._from_vision_thread` (même mécanisme que la vision). CN `backend`, certificats `infra/pki/out/` par défaut (`MQTT_CA|CERT|KEY`, `MQTT_HOST|PORT`).
+- `apply_message` (logique pure, testée) valide chaque message (topic, ≤ 512 octets, JSON, types et bornes), compte les messages perdus (`seq`), gère le Last Will `offline`.
+- `state()` = `{source, broker, connected, error, gasThreshold, nodes:[{node, online, fw, ip, seq, lost, readAt, lastSeenMs, gasRaw, pir, rssi, tempC, humidityPct}]}` ; diffusé en message WS `edge` à chaque message de l'ESP, inclus dans `hello`, dans `context()` du journal et dans `GET /api/edge`.
+- Alertes : `gas_<node>` (critical, MQ-2 ≥ `GAS_ALERT_RAW` = 600) et `presence_<node>` (warning, PIR) ; module `esp8266` (critical) : broker injoignable, `offline`, ou muet depuis `EDGE_TIMEOUT_S` (10 s). Journal : `edge.connected|disconnected|error|invalid|node_online|node_offline|pir`.
+- **Pas branché dans le score de menace** (`threat.py`) : à décider avec l'équipe IA.
 
 ### Analyse (`ai/`) — `ANALYZER=mock|local`
 Contrat : `analyze(snapshot) -> {detections:[{label,confidence,bbox{x,y,w,h},polygon?}], threat:{score 0-100,label}, environment?}` — **synchrone** (appelée dans un thread).

@@ -25,6 +25,8 @@ backend/        API FastAPI + vision YOLO + comptes/BDD          (tourne sur le 
   models/       poids YOLO (yolov8n.pt, yolov8n-seg.pt, yolo26n.pt)
 frontend/       dashboard React 18 + Vite 6 + Ant Design 6 (thème sombre)
 raspberry-pi/   scripts qui tournent sur le Pi : dht22_reader.py, camera_push.py
+firmware/esp8266/  Edge Node ESP8266 (PlatformIO) : MQ-2 + PIR en MQTTS ; backend : app/edge.py (EDGE=mqtt|mock|off)
+infra/          broker Mosquitto (Docker, mTLS + ACL) et PKI (pki/gen-certs.sh) ; docs/ : PLAN.md, mqtt-contract.md
 ml/             atelier IA hors ligne : vision/ (tests YOLO), environment/ (Isolation Forest DHT22)
 scripts/        run-api.mjs (lance le backend avec le venv, sans l'activer)
 .vscode/        F5 = back (debug Python) + front ; tâches ; settings (interpréteur = backend/.venv)

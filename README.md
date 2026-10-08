@@ -20,6 +20,7 @@ Deux modes, selon la variable `ANALYZER` :
 | Micro-servomoteur SG90 | oriente le capteur ultrason (radar) |
 | Capteur température / humidité DHT22 | données d'environnement (module « V182 », 3 broches) |
 | Capteur ultrason | mesure de distance (alerte de proximité) |
+| ESP8266 (NodeMCU) — Edge Node | boîtier autonome en MQTTS vers le PC : gaz MQ-2, présence PIR HC-SR501 (voir « Edge Node ESP8266 ») |
 
 ## Structure du dépôt
 
@@ -32,14 +33,19 @@ backend/            API FastAPI + vision YOLO  (tourne sur le PC)
     db.py           base de données (SQLite par défaut, PostgreSQL via DATABASE_URL)
     cli.py          gestion des comptes en ligne de commande (mot de passe perdu)
     alerts.py       moteur d'alertes
+    edge.py         Edge Node ESP8266 : client MQTTS (EDGE=mqtt) ou ESP simulé (EDGE=mock)
     config.py       seuils et variables d'environnement
     providers/      sources de données du Pi : mock.py · ssh.py (à implémenter) · motor.py
     vision/         caméra + YOLO dans un thread dédié : service.py · detector.py
     ai/             analyse : mock_analyzer.py · local_analyzer.py · threat.py · env_anomaly.py
   models/           poids des modèles (yolov8n.pt, yolo26n.pt)
   data/captures/    photos d'intrusion (générées, non versionnées)
+  tests/            tests pytest (python -m pytest tests -q)
 frontend/           dashboard React / Vite / Ant Design  (navigateur)
 raspberry-pi/       scripts qui tournent sur le Raspberry (lecture du DHT22)
+firmware/esp8266/   firmware PlatformIO de l'Edge Node (MQ-2, PIR, MQTTS)
+infra/              broker Mosquitto (Docker) + PKI : mosquitto/ (TLS, ACL) · pki/gen-certs.sh
+docs/               plan d'action, contrat MQTT
 ml/                 atelier de l'équipe IA, hors ligne : vision/ (tests YOLO) · environment/ (Isolation Forest DHT22)
 .vscode/            F5 : lance back + front
 ```
@@ -112,6 +118,11 @@ Le dashboard est protégé par un compte. Deux rôles :
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / aléatoire | compte admin créé au premier lancement |
 | `DEVICE_TOKEN` | vide | jeton du Raspberry pour `/ws/camera` (vide = le Pi est refusé) |
 | `SESSION_HOURS` / `COOKIE_SECURE` | `12` / `0` | durée des sessions / cookie réservé au HTTPS |
+| `EDGE` | `mock` avec `PROVIDER=mock`, sinon `off` | Edge Node ESP8266 : `mqtt` (vrai boîtier via le broker) \| `mock` (simulé) \| `off` |
+| `MQTT_HOST` / `MQTT_PORT` | `127.0.0.1` / `8883` | broker Mosquitto (`infra/docker-compose.yml`) |
+| `MQTT_CA` / `MQTT_CERT` / `MQTT_KEY` | `infra/pki/out/ca.crt`, `backend.crt`, `backend.key` | certificats du backend (générés par `infra/pki/gen-certs.sh`) |
+| `EDGE_TIMEOUT_S` | `10` | sans message de l'ESP pendant ce délai : perte de connexion |
+| `GAS_ALERT_RAW` | `600` | seuil d'alerte gaz (lecture brute du MQ-2, 0–1023) : à régler sur le vrai capteur |
 
 Ces variables peuvent aussi être mises dans `backend/.env` (ignoré par git, modèle : `backend/.env.example`).
 
@@ -151,8 +162,9 @@ Raspberry Pi ──(brut : capteurs)──► backend ──► front   chemin r
 | Score de menace | calculé par l'analyseur, affiché en différé : caméra 45 % / ultrason 25 % / thermique 15 % / environnement 15 % |
 | Alertes | proximité (< 80 cm), pic thermique (> 45 °C), intrusion (avec photo), anomalie d'environnement (score DHT22 ≥ 70) ; seuils dans `backend/app/config.py` |
 | Raspberry Pi | CPU, RAM, température, uptime |
+| Edge Node (ESP8266) | gaz MQ-2 (brut / 1023, courbe et seuil), présence PIR, Wi-Fi, état de la liaison MQTTS, messages perdus |
 
-En mode mock, trois boutons du journal d'alertes déclenchent un intrus (capteurs), un pic thermique ou une fenêtre ouverte pour la démo.
+En mode mock, des boutons du journal d'alertes déclenchent un intrus (capteurs), un pic thermique, une fenêtre ouverte, et avec `EDGE=mock` une fuite de gaz ou une présence PIR, pour la démo.
 
 ## API
 
@@ -165,11 +177,12 @@ Tout exige un compte (cookie de session) sauf `GET /api/health`. **Consultation 
 - `POST /api/vision/analyze` — YOLO sur une image envoyée en entrée (`?annotated=true` pour l'image dessinée)
 - `POST /api/vision/source` — `{mode:'browser'}` (YOLO traite la webcam du navigateur) | `{mode:'default'}` (caméra du backend)
 - `POST /api/motor` — `{type:'move',angle}` · `{type:'step',delta}` · `{type:'sweep',enabled}` · `{type:'speed',value}` · `{type:'stop'}`
-- `POST /api/mock/{scenario}` — `intruder` | `heat` | `window` (mock uniquement)
+- `POST /api/mock/{scenario}` — `intruder` | `heat` | `window` (`PROVIDER=mock`) · `gas` | `presence` (`EDGE=mock`)
+- `GET /api/edge` — Edge Node ESP8266 : liaison MQTT et dernières mesures de chaque boîtier (`null` si `EDGE=off`)
 - Documentation interactive générée par FastAPI : http://localhost:4000/docs
 
 WebSocket :
-- `/ws` (JSON) — `hello` (état complet à la connexion), `snapshot`, `analysis`, `alert` (champ `snapshot` = URL de la photo pour une intrusion), `motor`, `vision` (`{enabled, state: loading|running|waiting|error|stopped, source, model, fps, error}` ; `waiting` = mode navigateur sans image reçue)
+- `/ws` (JSON) — `hello` (état complet à la connexion), `snapshot`, `analysis`, `alert` (champ `snapshot` = URL de la photo pour une intrusion), `motor`, `edge` (état de l'Edge Node à chaque message de l'ESP), `vision` (`{enabled, state: loading|running|waiting|error|stopped, source, model, fps, error}` ; `waiting` = mode navigateur sans image reçue)
 - `/ws/video` (binaire, backend → front) — une image + ses résultats YOLO + la menace par message (format ci-dessus) ; rien si la vision est désactivée
 - `/ws/camera` (binaire, vers le backend) — images JPEG envoyées par la webcam du navigateur (mode `browser`) ou par le Raspberry (mode `push`), pour YOLO. Accepté pour un **admin connecté** (cookie) ou un appareil muni du jeton `?token=<DEVICE_TOKEN>` (le Raspberry). Les autres WebSocket (`/ws`, `/ws/video`) exigent un compte ; refus = fermeture avec le code `4401` (non connecté) ou `4403` (rôle insuffisant)
 
@@ -181,6 +194,17 @@ Tout passe par un *provider* (`backend/app/providers/`). Pour remplacer le mock,
 [ssh.py](backend/app/providers/ssh.py) avec le même contrat que `mock.py` (`start`, `stop`, `get_snapshot`, `send_motor_command`)
 et la même forme de snapshot — le moteur d'alertes, l'API, l'analyseur et le front n'ont pas à changer.
 Le contrat et une piste d'implémentation (`asyncssh` + script Python côté Pi) sont documentés en tête de `ssh.py`.
+
+## Edge Node ESP8266 (gaz, présence) en MQTTS
+
+Le sujet impose un boîtier ESP8266 « Edge Node » : il publie gaz (MQ-2) et présence (PIR) vers un broker **Mosquitto** sur le PC,
+en **TLS 1.2 avec certificat client** (mTLS) et **ACL par boîtier**. Le backend s'y abonne (`EDGE=mqtt`), indépendamment du Raspberry.
+
+1. PC serveur (Git Bash) : `cd infra && ./pki/gen-certs.sh && docker compose up -d` ; pare-feu Windows : ouvrir 8883 depuis le hotspot.
+2. ESP : voir [`firmware/esp8266/README.md`](firmware/esp8266/README.md) (câblage, `config.h`, `certs.h`, `pio run -t upload`).
+3. Backend : `EDGE=mqtt` dans `backend/.env` (certificats lus dans `infra/pki/out/` par défaut). Le panneau « Edge Node » apparaît dans le dashboard.
+
+Contrat des messages, ACL et commandes de preuve (Wireshark, connexion sans certificat refusée, usurpation refusée) : [`docs/mqtt-contract.md`](docs/mqtt-contract.md).
 
 ## Capteur DHT22 (température / humidité)
 

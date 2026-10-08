@@ -1,9 +1,13 @@
-# Sentinel-X — stack serveur (Raspberry Pi 5)
+# Sentinel-X — broker MQTT de l'Edge Node ESP8266, sur le PC serveur (Docker Desktop).
 #
-# Démarrage de l'infra seule (mardi matin) :
-#   cd infra && cp .env.example .env && ./pki/gen-certs.sh && docker compose up -d
-# Démarrage complet, une fois les services applicatifs écrits :
-#   docker compose --profile app up -d
+# Le backend FastAPI tourne hors Docker (F5 / npm run dev:yolo) et se connecte à ce broker en mTLS ;
+# l'ESP8266 s'y connecte depuis le hotspot Wi-Fi du PC. Voir docs/mqtt-contract.md.
+#
+#   cd infra
+#   ./pki/gen-certs.sh            (Git Bash sous Windows ; une seule fois)
+#   docker compose up -d
+#
+# Pare-feu Windows : autoriser le port 8883 en entrée depuis le hotspot.
 
 name: sentinel-x
 
@@ -24,111 +28,6 @@ services:
       timeout: 3s
       retries: 5
 
-  db:
-    image: timescale/timescaledb:latest-pg16
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - db-data:/var/lib/postgresql/data
-    # Pas de port publié : la base n'est joignable que depuis le réseau Docker.
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-
-  caddy:
-    image: caddy:2
-    restart: unless-stopped
-    ports:
-      - "443:443"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
-
-  # ---- Services applicatifs (profil "app") --------------------------------
-  # Chaque service est construit depuis son dossier à la racine du dépôt
-  # (api/, ia/anomaly/, ia/vision/, dashboard/), chacun avec son Dockerfile.
-
-  api:
-    profiles: ["app"]
-    build: ../api
-    restart: unless-stopped
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-      MQTT_HOST: mosquitto
-      MQTT_PORT: 8883
-      MQTT_CA: /certs/ca.crt
-      MQTT_CERT: /certs/api.crt
-      MQTT_KEY: /certs/api.key
-      SNAPSHOTS_DIR: /snapshots
-    volumes:
-      - ./pki/out/ca.crt:/certs/ca.crt:ro
-      - ./pki/out/api.crt:/certs/api.crt:ro
-      - ./pki/out/api.key:/certs/api.key:ro
-      - snapshots:/snapshots:ro
-    depends_on:
-      db:
-        condition: service_healthy
-      mosquitto:
-        condition: service_healthy
-
-  ia-anomaly:
-    profiles: ["app"]
-    build: ../ia/anomaly
-    restart: unless-stopped
-    environment:
-      MQTT_HOST: mosquitto
-      MQTT_PORT: 8883
-      MQTT_CA: /certs/ca.crt
-      MQTT_CERT: /certs/ia-anomaly.crt
-      MQTT_KEY: /certs/ia-anomaly.key
-      MODEL_PATH: /models/iforest.joblib
-    volumes:
-      - ./pki/out/ca.crt:/certs/ca.crt:ro
-      - ./pki/out/ia-anomaly.crt:/certs/ia-anomaly.crt:ro
-      - ./pki/out/ia-anomaly.key:/certs/ia-anomaly.key:ro
-      - ../ia/anomaly/models:/models:ro
-    depends_on:
-      mosquitto:
-        condition: service_healthy
-
-  ia-vision:
-    profiles: ["app"]
-    build: ../ia/vision
-    restart: unless-stopped
-    devices:
-      - /dev/video0:/dev/video0
-    environment:
-      MQTT_HOST: mosquitto
-      MQTT_PORT: 8883
-      MQTT_CA: /certs/ca.crt
-      MQTT_CERT: /certs/ia-vision.crt
-      MQTT_KEY: /certs/ia-vision.key
-      CAMERA_ID: cam-01
-      SNAPSHOTS_DIR: /snapshots
-    volumes:
-      - ./pki/out/ca.crt:/certs/ca.crt:ro
-      - ./pki/out/ia-vision.crt:/certs/ia-vision.crt:ro
-      - ./pki/out/ia-vision.key:/certs/ia-vision.key:ro
-      - snapshots:/snapshots
-    depends_on:
-      mosquitto:
-        condition: service_healthy
-
-  dashboard:
-    profiles: ["app"]
-    build: ../dashboard
-    restart: unless-stopped
-
 volumes:
   mosquitto-data:
   mosquitto-log:
-  db-data:
-  caddy-data:
-  caddy-config:
-  snapshots:
