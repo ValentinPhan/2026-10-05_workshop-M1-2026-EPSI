@@ -269,7 +269,9 @@ class Hub:
         was_ok = self.analysis["ok"] if self.analysis else True
         source = self.analyzer.name
         try:
-            out = await asyncio.to_thread(self.analyzer.analyze, raw)
+            # L'Edge Node (gaz, PIR) a sa propre liaison : son dernier état est joint au snapshot du Pi pour le score
+            snapshot = {**raw, "edge": self.edge_state()} if self.edge else raw
+            out = await asyncio.to_thread(self.analyzer.analyze, snapshot)
             if not isinstance(out.get("detections"), list) or not isinstance(
                 (out.get("threat") or {}).get("score"), (int, float)
             ):

@@ -192,7 +192,7 @@ Raspberry Pi ──(brut : capteurs)──► backend ──► front   chemin r
 | Thermique | matrice 8×8, moyenne / max, historique |
 | Environnement (DHT22) | température, humidité, point de rosée, score d'anomalie IA et ses raisons, historiques |
 | Moteur | angle, cible, vitesse, mode ; commandes : position, pas, centrer, balayage auto, vitesse, stop |
-| Score de menace | calculé par l'analyseur, affiché en différé : caméra 45 % / ultrason 25 % / thermique 15 % / environnement 15 % |
+| Score de menace | calculé par l'analyseur, affiché en différé : caméra 40 % / ultrason 20 % / PIR de l'ESP8266 10 % / thermique 15 % / environnement 15 %, et **plancher gaz** : le MQ-2 de l'ESP impose un score minimal (0 sous la moitié du seuil `GAS_ALERT_RAW`, 70 = « Menace » au seuil) ; voir `backend/app/ai/threat.py` |
 | Alertes | proximité (< 80 cm), pic thermique (> 45 °C), intrusion (avec photo), anomalie d'environnement (score DHT22 ≥ 70) ; seuils dans `backend/app/config.py` |
 | Raspberry Pi | CPU, RAM, température, uptime |
 | Edge Node (ESP8266) | gaz MQ-2 (brut / 1023, courbe et seuil), présence PIR, Wi-Fi, état de la liaison MQTTS, messages perdus |
