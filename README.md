@@ -146,7 +146,8 @@ Le dashboard est protégé par un compte. Deux rôles :
 | `RECORD_CRF` / `RECORD_MAX_WIDTH` | `28` / `640` | qualité H.264 (23 = meilleure et plus lourd, 32 = plus léger) / largeur max du clip |
 | `RECORD_KEEP_MB` | `1000` | quota du dossier des clips : les plus anciens sont supprimés au-delà |
 | `VIDEOS_DIR` | `backend/data/videos` | dossier des clips vidéo |
-| `LOG_DIR` | `backend/data/logs` | journal JSON des événements (un fichier par jour) |
+| `LOG_DIR` | `backend/data/logs` | journaux, un fichier par jour : `events-AAAA-MM-JJ.jsonl` (événements JSON avec l'état complet) et `sentinel-AAAA-MM-JJ.log` (**historique lisible** : messages de la console et événements, une ligne horodatée chacun) |
+| `LOG_KEEP_DAYS` | `30` | journaux supprimés au-delà de N jours (au démarrage et à chaque changement de jour) ; `0` = tout garder |
 | `MONITOR_INTERVAL_S` | `60` | relevé périodique de tous les capteurs dans le journal JSON (min. 1) |
 | `MODULE_TIMEOUT_S` / `DHT_STALE_S` | `5` / `30` | délai (s) sans snapshot avant de déclarer le Raspberry perdu / âge max (s) de la dernière mesure DHT22 |
 | `HISTORY_SIZE` / `ALERTS_SIZE` | `120` / `50` | taille des historiques de mesures / des alertes gardées en mémoire |

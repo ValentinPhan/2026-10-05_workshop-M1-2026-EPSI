@@ -122,7 +122,11 @@ def bootstrap_admin() -> None:
     if cfg.admin_password:
         log.info(green(f"compte admin « {cfg.admin_username} » créé (mot de passe : variable ADMIN_PASSWORD)"))
     else:
-        log.warning(green(f"COMPTE ADMIN CRÉÉ — identifiant : {cfg.admin_username} · mot de passe : {password}  (affiché une seule fois, à noter)"))
+        # console_only : le mot de passe s'affiche à l'écran mais n'est écrit dans aucun journal (voir logger.py)
+        log.warning(
+            green(f"COMPTE ADMIN CRÉÉ — identifiant : {cfg.admin_username} · mot de passe : {password}  (affiché une seule fois, à noter)"),
+            extra={"console_only": True},
+        )
 
 
 # ---- routes ----

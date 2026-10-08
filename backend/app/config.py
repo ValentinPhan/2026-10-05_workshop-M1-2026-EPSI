@@ -24,7 +24,7 @@ _load_dotenv()  # avant les valeurs par défaut ci-dessous, qui lisent os.enviro
 MODELS_DIR = BACKEND_DIR / "models"  # poids des modèles (YOLO, ...)
 CAPTURES_DIR = Path(os.environ.get("CAPTURES_DIR", BACKEND_DIR / "data" / "captures"))  # photos d'intrusion
 VIDEOS_DIR = Path(os.environ.get("VIDEOS_DIR", BACKEND_DIR / "data" / "videos"))  # clips vidéo des intrusions
-LOG_DIR = Path(os.environ.get("LOG_DIR", BACKEND_DIR / "data" / "logs"))  # journal JSON des événements (voir logger.py)
+LOG_DIR = Path(os.environ.get("LOG_DIR", BACKEND_DIR / "data" / "logs"))  # journaux JSON et texte (voir logger.py)
 
 
 def _num(name: str, default: float) -> float:
@@ -152,6 +152,8 @@ class Config:
     # Relevé périodique dans le journal JSON (monitoring et analyse a posteriori) : une ligne avec toutes les données
     # des capteurs au moins toutes les MONITOR_INTERVAL_S secondes, indépendamment de tout événement.
     monitor_interval_s: float = max(1.0, _num("MONITOR_INTERVAL_S", 60))
+    # Journaux (events-*.jsonl et sentinel-*.log) gardés N jours puis supprimés ; 0 = tout garder.
+    log_keep_days: int = max(0, int(_num("LOG_KEEP_DAYS", 30)))
     history_size: int = int(_num("HISTORY_SIZE", 120))
     alerts_size: int = int(_num("ALERTS_SIZE", 50))
     ssh: SshConfig = field(default_factory=SshConfig)
