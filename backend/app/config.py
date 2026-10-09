@@ -86,6 +86,54 @@ class EdgeConfig:
     timeout_s: float = _num("EDGE_TIMEOUT_S", 10)  # sans message d'un boîtier pendant ce délai = perte de connexion
 
 
+def _env_file(path: str) -> dict[str, str]:
+    """Lit un fichier .env SANS l'injecter dans os.environ (ses MQTT_HOST/PORT ne doivent pas viser l'Edge Node)."""
+    values: dict[str, str] = {}
+    try:
+        lines = Path(path).read_text(encoding="utf-8-sig").splitlines() if path else []
+    except OSError:
+        return values
+    for line in lines:
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            values[key.strip()] = value.strip().strip("\"'")
+    return values
+
+
+# .env de la pile serveur de l'équipe infra (compose.yaml + install.ps1) : on le réutilise tel quel
+_PI_ENV = _env_file(os.environ.get("PI_MQTT_ENV_FILE", ""))
+
+
+def _pi(name: str, default: str = "") -> str:
+    """PI_MQTT_<NAME> (environnement ou backend/.env), sinon MQTT_<NAME> du .env de l'infra, sinon la valeur par défaut."""
+    return os.environ.get(f"PI_MQTT_{name}") or _PI_ENV.get(f"MQTT_{name}") or default
+
+
+@dataclass(frozen=True)
+class PiMqttConfig:
+    """Broker Mosquitto du Raspberry (TLS, identifiant / mot de passe) : même protocole que le backend Docker de
+    l'équipe infra (voir pi_mqtt.py). Liaison en plus du SSH, jamais bloquante.
+
+    PI_MQTT : auto (défaut : actif si un mot de passe est connu) | on | off.
+    """
+
+    mode: str = os.environ.get("PI_MQTT", "auto").strip().lower()
+    host: str = _pi("HOST", "sentinel-x")  # nom présent dans le certificat du broker (vérifié)
+    port: int = int(_pi("PORT", "8883"))
+    username: str = _pi("USER", "sentinelel")
+    password: str = _pi("PASSWORD")
+    ca: str = _pi("CA", str(BACKEND_DIR.parent / "infra" / "pi-broker" / "ca.crt"))
+    # Adresse de secours si le nom ne se résout pas (comme extra_hosts dans le compose de l'infra) : le certificat
+    # reste vérifié avec le NOM ci-dessus.
+    fallback_ip: str = os.environ.get("PI_MQTT_IP") or _PI_ENV.get("RASPBERRY_IP") or os.environ.get("SSH_HOST", "")
+    client_id: str = os.environ.get("PI_MQTT_CLIENT_ID", "sentinel-x-api")  # ≠ "sentinel-backend" (conteneur de l'infra)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode in ("on", "1", "true") or (self.mode == "auto" and bool(self.password))
+
+
 @dataclass(frozen=True)
 class VisionConfig:
     """Vision temps réel (YOLO), active uniquement avec ANALYZER=local."""
@@ -156,6 +204,7 @@ class Config:
     alerts_size: int = int(_num("ALERTS_SIZE", 50))
     ssh: SshConfig = field(default_factory=SshConfig)
     edge: EdgeConfig = field(default_factory=EdgeConfig)
+    pi_mqtt: PiMqttConfig = field(default_factory=PiMqttConfig)
     vision: VisionConfig = field(default_factory=VisionConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     thresholds: Thresholds = field(default_factory=Thresholds)

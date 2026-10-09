@@ -27,6 +27,7 @@ from .db import database
 from .edge import create_edge
 from .hub import Hub
 from .logger import logger
+from .pi_mqtt import create_pi_mqtt
 from .providers import create_provider
 from .vision import create_vision
 
@@ -37,7 +38,8 @@ provider = create_provider(config)
 vision = create_vision(config)  # None sauf avec ANALYZER=local
 analyzer = create_analyzer(config, vision)
 edge = create_edge(config.edge, config.thresholds.gas_raw)  # Edge Node ESP8266 (MQTTS), None si EDGE=off
-hub = Hub(config, provider, analyzer, vision, database, edge)
+pi_mqtt = create_pi_mqtt(config.pi_mqtt, database)  # broker MQTT du Raspberry, None si PI_MQTT=off ou sans mot de passe
+hub = Hub(config, provider, analyzer, vision, database, edge, pi_mqtt)
 
 
 @asynccontextmanager
@@ -45,13 +47,14 @@ async def lifespan(_app: FastAPI):
     await asyncio.to_thread(bootstrap_admin)
     await hub.start()
     logging.getLogger("sentinel-x").info(
-        "env: %s%s, provider: %s, analyse: %s, vision: %s, edge: %s, base: %s, tick %d ms",
+        "env: %s%s, provider: %s, analyse: %s, vision: %s, edge: %s, mqtt pi: %s, base: %s, tick %d ms",
         config.env,
         " (photos d'intrusion désactivées)" if config.env == "dev" else "",
         provider.name,
         analyzer.name,
         f"YOLO sur {config.vision.source}" if vision else "off",
         f"ESP8266 via MQTTS {config.edge.host}:{config.edge.port}" if config.edge.source == "mqtt" else config.edge.source,
+        f"{config.pi_mqtt.host}:{config.pi_mqtt.port} (TLS)" if pi_mqtt else "off",
         database.dialect,
         config.tick_ms,
     )
@@ -164,6 +167,15 @@ def video(name: str, _user: dict = Depends(current_user)):
 async def edge_status(_user: dict = Depends(current_user)):
     """Edge Node ESP8266 : liaison MQTT et dernières mesures de chaque boîtier (null si EDGE=off)."""
     return hub.edge_state()
+
+
+@app.get("/api/pi-mqtt")
+async def pi_mqtt_status(limit: int = 20, _user: dict = Depends(current_user)):
+    """Broker MQTT du Raspberry : état de la liaison et derniers messages enregistrés (null si PI_MQTT=off)."""
+    if pi_mqtt is None:
+        return None
+    events = await asyncio.to_thread(database.recent_pi_events, max(1, min(limit, 200)))
+    return {**pi_mqtt.state(), "events": events}
 
 
 @app.get("/api/modules")

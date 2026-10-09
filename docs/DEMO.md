@@ -74,9 +74,9 @@ Le schéma des 4 briques, une phrase chacune :
 
 ### T-30 min (dans la salle)
 
-1. Brancher le routeur ou activer le hotspot du PC (**jamais le Wi-Fi de l'école**), puis allumer le Pi. (Pas de Docker ni de broker : l'ESP n'est pas utilisé.)
-2. `backend/.env` : `APP_ENV=prod`, `PROVIDER=ssh`, `ANALYZER=local`, **`EDGE=off`**, `VISION_SOURCE=push` (caméra du Pi) ou `browser` (webcam du PC), mots de passe admin **et agent** connus (`AGENT_PASSWORD`).
-3. Lancer le backend et le front (F5 « Sentinel-X + YOLO (caméra du Raspberry, push) », ou `npm run dev:yolo`). Sur le Pi : `camera_push.py` si `VISION_SOURCE=push`.
+1. Brancher le routeur ou activer le hotspot du PC (**jamais le Wi-Fi de l'école**), puis allumer le Pi. (L'ESP n'est pas utilisé. Le broker Mosquitto **du Pi** est facultatif : le backend s'y connecte s'il répond, sinon il continue sans.)
+2. `backend/.env` : `APP_ENV=prod`, `PROVIDER=ssh`, `ANALYZER=local`, **`EDGE=off`**, `VISION_SOURCE=browser` (caméra USB branchée au PC, choisie dans le navigateur) ; `PI_MQTT_ENV_FILE` = `.env` de l'infra ; mots de passe admin **et agent** connus (`AGENT_PASSWORD`). **La caméra du Pi ne fonctionne pas** (9 octobre) : pas de `push`.
+3. Lancer le backend et le front (`npm run dev:yolo`, ou F5 « Sentinel-X + YOLO (webcam navigateur) » ; variante : F5 « caméra du backend » avec `VISION_SOURCE=1`, l'index de la caméra USB). Vérifier `GET /api/pi-mqtt` : `connected: true`.
 4. Se connecter en **admin**, plein écran, zoom du navigateur réglé pour que tout le dashboard tienne à l'écran.
 5. Préparer un second onglet pour la reconnexion en **agent** (acte 4).
 

@@ -60,9 +60,10 @@ class VideoClient:
 
 
 class Hub:
-    def __init__(self, config: Config, provider, analyzer, vision=None, database=None, edge=None):
+    def __init__(self, config: Config, provider, analyzer, vision=None, database=None, edge=None, pi_mqtt=None):
         self.provider = provider
         self.edge = edge  # Edge Node ESP8266 (EDGE=mqtt|mock), None si EDGE=off
+        self.pi_mqtt = pi_mqtt  # broker MQTT du Raspberry (pi_mqtt.py), en plus du SSH ; None si PI_MQTT=off
         self.analyzer = analyzer
         self.vision = vision
         self.db = database  # historique des alertes (optionnel : sans base, tout reste en mémoire)
@@ -99,6 +100,7 @@ class Hub:
             "sensors": self.latest,  # dernier snapshot du Pi : ultrason, thermique, environnement, moteur, système, caméra
             "analysis": self.analysis,  # dernière analyse IA : menace, anomalies d'environnement, détections
             "edge": self.edge_state(),  # Edge Node ESP8266 : gaz, présence, liaison MQTT
+            "piMqtt": self.pi_mqtt.state() if self.pi_mqtt else None,  # broker MQTT du Raspberry
             "vision": self.vision_status(),
             "activeAlerts": self.alerts.active(),
             "modules": self.monitor.states(),  # santé de chaque module (ok / lost / unknown, depuis quand, pourquoi)
@@ -380,6 +382,8 @@ class Hub:
         self._watchdog = asyncio.create_task(self._watch_modules())
         self._monitor_task = asyncio.create_task(self._monitor_log())
         await self.provider.start(self.on_snapshot)
+        if self.pi_mqtt:
+            await self.pi_mqtt.start()  # non bloquant : connexion dans le thread de paho
         if self.edge:
             await self.edge.start(lambda info: self._from_vision_thread(self._on_edge, info))  # thread MQTT -> boucle
         if self.vision:
@@ -401,5 +405,7 @@ class Hub:
         if self.vision:
             await asyncio.to_thread(self.vision.stop)
         await self.provider.stop()
+        if self.pi_mqtt:
+            await self.pi_mqtt.stop()
         if self.edge:
             await self.edge.stop()

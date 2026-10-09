@@ -2,7 +2,15 @@
 
 *Rédigé le mercredi 7 octobre 2026 (J-2 de la soutenance locale), mis à jour le vendredi 9 octobre (jour de la soutenance) : **ESP8266 non câblé**, nouveau thème « labo de Gru », plancher « personne confirmée = Menace », fusion avec les 18 commits de Valentin (SSH, Edge Node, docs, tests). À mettre à jour à chaque étape importante.*
 
-## Mise à jour du 9 octobre (à lire en premier)
+## Mise à jour du 9 octobre, après-midi (à lire en premier)
+
+- **Vrai Raspberry branché** : `backend/.env` de l'utilisateur = `PROVIDER=ssh`, `SSH_HOST=192.168.137.75`, `SSH_USER=piadmin` (**pas `pi`** : Raspberry Pi OS récent ; nom retrouvé dans l'historique PowerShell), `EDGE=off`. Clé `~/.ssh/id_rsa.pub` de l'utilisateur ajoutée à `authorized_keys` du Pi (connexion sans mot de passe vérifiée). `sentinel_agent.py` + `dht22_reader.py` copiés dans `~/sentinel-x/raspberry-pi/` sur le Pi. Sur le Pi : Python 3.13, `gpiozero` et `adafruit_dht` présents, **`pigpiod` non lancé** (servo en PWM logiciel, peut trembler : `sudo systemctl enable --now pigpiod`). Agent `--fake` démarre ; **mode réel (GPIO) pas encore confirmé par l'utilisateur** au moment d'écrire.
+- **Caméra CSI du Pi en panne** : vidéo = **caméra USB branchée au PC** (`VISION_SOURCE=browser` via `npm run dev:yolo`, ou F5 « caméra du backend » avec `VISION_SOURCE=1`). `camera_push.py` / mode `push` inutilisés. Question ouverte : `MIRROR = true` (`drawOverlay.js`) inverse gauche/droite, adapté à une webcam face à soi, pas à une caméra de surveillance.
+- **Broker MQTT du Pi intégré au backend** (`app/pi_mqtt.py`, voir `architecture.md`) : reprise du backend Docker de l'équipe infra (dossier hors dépôt `C:\Users\noamg\Bureau\Projet EPSI\sentinel-x-server-collegue` : `compose.yaml`, `install.ps1`, `.env`, `certs/ca.crt`). `backend/.env` contient `PI_MQTT_ENV_FILE=<ce dossier>\.env` (leur `.env` relu tel quel, aucun mot de passe recopié). **Testé en réel contre le Pi** : TLS, stockage, ACK. Leur conteneur `sentinel-backend` acquitte aussi : **l'arrêter en démo** (`docker stop sentinel-backend`). Pas encore affiché dans le dashboard ; idée : messages `cyber` ⇒ alertes.
+- Distinguer réel / simulé : étiquette « source : ssh » (vs « mock ») en haut du dashboard et dans le panneau Raspberry Pi, panneau thermique absent, pas de boutons « Simuler… », console `[pi] [agent] démarré (… fake=False)`.
+- **Tests** : 42 (27 + 15 `test_pi_mqtt.py`), tous verts.
+
+## Mise à jour du 9 octobre, matin
 
 - **ESP8266 : non câblé** (photo du montage : `docs/img/montage-raspberry.jpg`). Boîtier réel = Pi 3 + caméra CSI + SG90 + HC-SR04 (diviseur 1 kΩ / 2 kΩ sur breadboard) + DHT22, **sans matrice thermique**. Backend en **`EDGE=off`** ; le code Edge (firmware, `edge.py`, broker, PKI, `EdgePanel`, tests en `EDGE=mock`) reste dans le dépôt pour les nationales. **Risque jury** : le sujet impose un Edge Node (« éliminatoire » selon `docs/PLAN.md`) ; la réponse prévue est franche (`docs/DEMO.md` § 6).
 - **Score de menace** : une personne confirmée (confiance ≥ `thresholds.person_confidence`, 0,6) impose un plancher « Menace » (60 à 70). Avant, la caméra seule plafonnait à 40-45 (« Vigilance ») et l'alerte ne se déclenchait jamais sans autre capteur. Décision de l'utilisateur ; **le test de Valentin `test_threat.py` (personne seule = 40) a été adapté** en conséquence : à lui signaler.
@@ -69,6 +77,8 @@
 | **ESP8266 désactivé (`EDGE=off`) pour la soutenance du 9 octobre** | non câblé (voir la photo du montage) ; le code, le firmware et l'infra restent pour les nationales ; `EDGE=mock` affiche un faux boîtier « Simulé » : à éviter devant le jury |
 | **Plancher « personne confirmée = Menace »** dans `threat_score` (même seuil de confiance que l'alerte d'intrusion) | sans lui une personne seule n'atteignait jamais 60 (caméra = 40 % du score) : la mascotte et la sirène ne se déclenchaient pas |
 | **Thème « labo de Gru »** (Minion SVG maison, jaune / denim, grille néon) en gardant Ant Design | demande de l'utilisateur ; pas de shadcn / Tailwind (réécriture inutile) ; seules les opacités et transforms sont animées (pas de `filter` sur éléments animés) ; mascotte dessinée à la main, aucun asset officiel (marque Illumination / Universal : pas pour un support public) |
+| **Liaison MQTT du Pi dans notre backend** (`pi_mqtt.py`) plutôt que le conteneur Python de l'infra, **en plus du SSH et non bloquante** | un seul backend (pas deux processus qui consomment et acquittent les mêmes messages) ; même protocole et même table `events` que l'infra (compatibles avec leur PostgreSQL) ; le SSH reste la source des capteurs, MQTT ne peut donc jamais casser la démo |
+| **Caméra USB sur le PC** plutôt que la caméra CSI du Pi | CSI en panne le 9 octobre ; le code `push` reste pour plus tard |
 | **Mode mock conservé** (`PROVIDER=mock`, `ANALYZER=mock`) | développer et faire la démo sans matériel ; scénarios déclenchables (intrus, pic thermique, fenêtre) |
 
 ## Prochaines étapes suggérées (à arbitrer avec l'utilisateur)

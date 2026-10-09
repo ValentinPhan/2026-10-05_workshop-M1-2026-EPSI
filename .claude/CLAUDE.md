@@ -9,6 +9,7 @@ Sentinel-X = boîtier de surveillance autonome pour le workshop M1 2026 de l'ESP
 Un **Raspberry Pi 3** (capteur ultrason HC-SR04, DHT22 température/humidité, caméra CSI, servo SG90 de rotation ; **pas de matrice thermique**) envoie de la donnée
 brute au **PC** qui héberge un **backend Python** (FastAPI + YOLO + base de données), lequel alimente un **dashboard React** temps réel (thème « labo de Gru » : mascotte Minion, grille néon).
 **L'Edge Node ESP8266 (gaz, PIR, MQTTS) n'est PAS câblé** (décision du 9 octobre, photo du montage : `docs/img/montage-raspberry.jpg`) : son code reste dans le dépôt, désactivé (`EDGE=off`, défaut avec `PROVIDER=ssh`). Ne jamais le présenter comme branché ; ne pas lancer `EDGE=mock` en démo.
+**La caméra CSI du Pi ne marche pas** (9 octobre) : la vidéo vient d'une **caméra USB branchée au PC** (`VISION_SOURCE=browser`, ou `VISION_SOURCE=<index>` côté backend). Le backend se connecte aussi au **broker MQTT TLS du Pi** (`app/pi_mqtt.py`, `PI_MQTT_ENV_FILE` = `.env` de l'infra), sans jamais bloquer.
 
 - Dépôt GitHub : `ValentinPhan/2026-10-05_workshop-M1-2026-EPSI` (branche `main`). Équipe de 6 : dev (Noam, git `N0amG`, utilisateur principal de Claude), 3 IA (dont Silya pour YOLO), infra/cloud, cyber (Valentin a poussé le DHT22).
 - Calendrier : lundi 5 → **soutenance locale vendredi 9 octobre 2026**, puis qualifications nationales si qualifiés (l'architecture doit rester évolutive).
@@ -20,7 +21,7 @@ brute au **PC** qui héberge un **backend Python** (FastAPI + YOLO + base de don
 backend/        API FastAPI + vision YOLO + comptes/BDD          (tourne sur le PC)
   app/          main.py hub.py alerts.py config.py auth.py db.py cli.py console.py
                 clock.py (now_ms, horloge commune) · logger.py (journal JSON centralisé) · modules.py (santé des modules : perte de connexion)
-                edge.py (Edge Node ESP8266 : NON CÂBLÉ, EDGE=off)
+                edge.py (Edge Node ESP8266 : NON CÂBLÉ, EDGE=off) · pi_mqtt.py (broker MQTT TLS du Pi, protocole de l'infra, non bloquant)
     providers/  mock.py (Pi simulé) · ssh.py (Pi réel : asyncssh + raspberry-pi/sentinel_agent.py) · motor.py
     vision/     service.py (caméra+YOLO en thread) · detector.py
     ai/         mock_analyzer.py · local_analyzer.py · threat.py · env_anomaly.py
@@ -45,7 +46,7 @@ cd backend && python -m venv .venv
 .venv\Scripts\activate                          # Linux/Mac : source .venv/bin/activate
 pip install -r requirements.txt -r requirements-vision.txt   # vision = torch, ~1 Go ; ajouter ../ml/environment/requirements.txt si besoin
 cp .env.example .env                            # optionnel : APP_ENV, DATABASE_URL, ADMIN_PASSWORD, AGENT_PASSWORD, DEVICE_TOKEN, LOG_DIR
-python -m pip install pytest                    # tests : cd backend && python -m pytest tests -q (27 tests, tous verts le 9 octobre)
+python -m pip install pytest                    # tests : cd backend && python -m pytest tests -q (42 tests, tous verts le 9 octobre)
 cd .. && npm run dev:yolo                       # ou F5 dans VS Code (config « Sentinel-X + YOLO (webcam navigateur) »)
 ```
 

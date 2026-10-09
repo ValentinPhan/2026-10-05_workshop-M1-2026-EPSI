@@ -28,6 +28,7 @@
 - Une pile serveur Docker (Postgres, MQTT) existe **hors dépôt** chez l'utilisateur (`C:\Users\noamg\Bureau\sentinel-x-server`, retirée du dépôt par l'utilisateur). Son conteneur Postgres `sentinel-postgres`
   (postgres:17) **ne publie pas le port 5432** sur la machine : pour que le backend l'utilise, il faut `ports: ["127.0.0.1:5432:5432"]` dans son compose. Le broker de l'ESP est celui de `infra/` (mTLS + ACL), pas celui de cette pile.
 - **Montage réel (9 octobre)** : Pi 3 Model B, caméra CSI, servo SG90, HC-SR04 sur breadboard (diviseur 1 kΩ / 2 kΩ sur Echo), DHT22 (AM2302) ; **pas de matrice thermique** (`thermal: null`, `ABSENT_MODULES=thermal`) ; photo : `docs/img/montage-raspberry.jpg`, détail : `raspberry-pi/README.md`.
+  **Caméra CSI en panne** : la vidéo vient d'une caméra USB branchée au PC. Pi joint en `piadmin@192.168.137.75` (SSH :22, Mosquitto TLS :8883, nom `sentinel-x`).
 - Plan d'action : `docs/PLAN.md` (§ 2 et 4 bis à jour au 9 octobre ; le reste = plan initial du lundi). Scénario de soutenance chronométré (sans ESP) : `docs/DEMO.md`.
 
 ## 2. Backend (`backend/app/`)
@@ -62,6 +63,12 @@ Défaut `mock` avec `PROVIDER=mock`, sinon `off`. Contrat : `name`, `async start
 - `state()` = `{source, broker, connected, error, gasThreshold, nodes:[{node, online, fw, ip, seq, lost, readAt, lastSeenMs, gasRaw, pir, rssi, tempC, humidityPct}]}` ; diffusé en message WS `edge` à chaque message de l'ESP, inclus dans `hello`, dans `context()` du journal et dans `GET /api/edge`.
 - Alertes : `gas_<node>` (critical, MQ-2 ≥ `GAS_ALERT_RAW` = 600) et `presence_<node>` (warning, PIR) ; module `esp8266` (critical) : broker injoignable, `offline`, ou muet depuis `EDGE_TIMEOUT_S` (10 s). Journal : `edge.connected|disconnected|error|invalid|node_online|node_offline|pir`.
 - **Dans le score de menace** : le Hub joint `edge_state()` au snapshot passé à l'analyseur (`snapshot["edge"]`, aussi pour `POST /api/vision/analyze`) ; PIR = 10 % de la somme pondérée, gaz = plancher (voir `threat.py`). Boîtier hors ligne ou muet > `EDGE_TIMEOUT_S` : ignoré.
+
+### Broker MQTT du Raspberry (`pi_mqtt.py`) — `PI_MQTT=auto|on|off` (ajouté le 9 octobre)
+Reprise **dans notre backend** du backend Docker de l'équipe infra (pile hors dépôt `sentinel-x-server-collegue` : compose + `install.ps1`). **En plus du SSH, jamais bloquant** (paho dans son thread, `connect_async`, reconnexion 1 → 30 s ; broker absent = une ligne `pimqtt.error`, rien d'autre ne change, pas d'alerte ni de module de santé).
+- Protocole identique au leur : MQTT 3.1.1 / TLS 8883, CA `infra/pi-broker/ca.crt` (copiée de l'infra, publique), nom vérifié `sentinel-x`, identifiant / mot de passe ; abonnements QoS 1 `sentinel/+/{telemetry,cyber,status}` ; message JSON avec `event_id` + `timestamp` ISO ; stocké dans la table **`events`** (même schéma que la leur : `event_id` PK, `device_id`, `category`, `event_type`, `event_timestamp`, `payload` JSONB, `received_at`) puis ACK `{"event_id","status":"stored"}` sur `sentinel/<device>/ack` (doublon = ré-acquitté, pas réenregistré).
+- Config : `PI_MQTT_ENV_FILE` = chemin de **leur `.env`** (lu à part, sans polluer `MQTT_HOST/PORT` de l'Edge) ; `PI_MQTT_HOST|PORT|USER|PASSWORD|IP|CA` prioritaires. `auto` = actif si un mot de passe est connu. Si `sentinel-x` ne se résout pas : connexion à `PI_MQTT_IP` / `RASPBERRY_IP` / `SSH_HOST`, **certificat toujours vérifié avec le nom** (sous-classe paho, équivalent de `extra_hosts`). Client id `sentinel-x-api` (≠ leur `sentinel-backend`).
+- Journal : `pimqtt.connected|disconnected|error|invalid|cyber|status` (la télémétrie ne va qu'en base). État dans `context()` (`piMqtt`) et `GET /api/pi-mqtt` (+ derniers `events`). **Pas d'affichage dans le dashboard.** Testé en réel le 9 octobre contre le Pi (TLS, stockage, ACK OK). Tests : `tests/test_pi_mqtt.py`.
 
 ### Analyse (`ai/`) — `ANALYZER=mock|local`
 Contrat : `analyze(snapshot) -> {detections:[{label,confidence,bbox{x,y,w,h},polygon?}], threat:{score 0-100,label}, environment?}` — **synchrone** (appelée dans un thread).

@@ -5,9 +5,11 @@ SQLAlchemy 2 : le même code tourne sur SQLite (défaut, un simple fichier) et s
 Les méthodes sont synchrones et retournent des dict simples ; depuis du code async, les appeler avec
 `asyncio.to_thread(...)`.
 """
+from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import BigInteger, Index, Integer, String, Text, create_engine, delete, func, select, text
+from sqlalchemy import JSON, BigInteger, DateTime, Index, Integer, String, Text, create_engine, delete, func, select, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -55,6 +57,20 @@ class AuditRow(Base):
     username: Mapped[str | None] = mapped_column(String(32), nullable=True)
     action: Mapped[str] = mapped_column(String(32))
     detail: Mapped[str] = mapped_column(Text, default="")
+
+
+class PiEventRow(Base):
+    """Messages reçus du broker MQTT du Raspberry (voir pi_mqtt.py). Même table que le backend Docker de l'infra :
+    DATABASE_URL vers leur PostgreSQL = on lit et complète les mêmes données."""
+
+    __tablename__ = "events"
+    event_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    device_id: Mapped[str] = mapped_column(Text)
+    category: Mapped[str] = mapped_column(Text)  # telemetry | cyber | status
+    event_type: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    payload: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 def _user(row: User) -> dict:  # noqa: D103 — voir `database` en bas du fichier pour l'instance partagée
@@ -168,6 +184,32 @@ class Database:
             rows = s.scalars(select(AlertRow).order_by(AlertRow.id.desc()).limit(limit))
             return [
                 {"id": r.id, "ts": r.ts, "level": r.level, "key": r.key, "message": r.message, **({"snapshot": r.snapshot} if r.snapshot else {})}
+                for r in rows
+            ]
+
+    # ---- messages MQTT du Raspberry ----
+    def save_pi_event(self, event: dict) -> bool:
+        """Enregistre un message (forme de pi_mqtt.parse_message). False s'il était déjà là (renvoi QoS 1) : idempotent."""
+        with self._session() as s:
+            if s.get(PiEventRow, event["eventId"]) is not None:
+                return False
+            s.add(PiEventRow(
+                event_id=event["eventId"], device_id=event["deviceId"], category=event["category"],
+                event_type=event["eventType"], event_timestamp=event["timestamp"], payload=event["payload"],
+            ))
+            try:
+                s.commit()
+            except IntegrityError:  # reçu deux fois en même temps
+                s.rollback()
+                return False
+            return True
+
+    def recent_pi_events(self, limit: int) -> list[dict]:
+        with self._session() as s:
+            rows = s.scalars(select(PiEventRow).order_by(PiEventRow.received_at.desc()).limit(limit))
+            return [
+                {"eventId": r.event_id, "deviceId": r.device_id, "category": r.category, "eventType": r.event_type,
+                 "timestamp": r.event_timestamp.isoformat(), "payload": r.payload}
                 for r in rows
             ]
 

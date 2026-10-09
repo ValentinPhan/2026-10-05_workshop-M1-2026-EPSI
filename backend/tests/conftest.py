@@ -12,5 +12,6 @@ os.environ.update({
     "CAPTURES_DIR": str(Path(TMP, "captures")), "VIDEOS_DIR": str(Path(TMP, "videos")),
     "ADMIN_USERNAME": "admin", "ADMIN_PASSWORD": ADMIN_PASSWORD,
     "PROVIDER": "mock", "ANALYZER": "mock", "EDGE": "mock", "APP_ENV": "dev",
+    "PI_MQTT": "off", "PI_MQTT_ENV_FILE": "",  # jamais de connexion au vrai broker pendant les tests
 })
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # `import app` depuis backend/
