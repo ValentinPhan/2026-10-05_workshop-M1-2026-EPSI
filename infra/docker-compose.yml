@@ -1,0 +1,33 @@
+# Sentinel-X — broker MQTT de l'Edge Node ESP8266, sur le PC serveur (Docker Desktop).
+#
+# Le backend FastAPI tourne hors Docker (F5 / npm run dev:yolo) et se connecte à ce broker en mTLS ;
+# l'ESP8266 s'y connecte depuis le hotspot Wi-Fi du PC. Voir docs/mqtt-contract.md.
+#
+#   cd infra
+#   ./pki/gen-certs.sh            (Git Bash sous Windows ; une seule fois)
+#   docker compose up -d
+#
+# Pare-feu Windows : autoriser le port 8883 en entrée depuis le hotspot.
+
+name: sentinel-x
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "8883:8883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - ./pki/out:/mosquitto/certs:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 8883 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:

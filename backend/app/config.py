@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
+PKI_DIR = BACKEND_DIR.parent / "infra" / "pki" / "out"  # certificats générés par infra/pki/gen-certs.sh
 
 
 def _load_dotenv() -> None:
@@ -41,14 +42,48 @@ class Thresholds:
     heat_max_c: float = 45
     person_confidence: float = 0.6
     env_anomaly_score: float = 70  # score d'anomalie DHT22 (0..100) au-delà duquel on alerte
+    gas_raw: float = _num("GAS_ALERT_RAW", 600)  # MQ-2 de l'ESP8266 : lecture brute A0 (0..1023) au-delà de laquelle on alerte
 
 
 @dataclass(frozen=True)
 class SshConfig:
+    """Liaison avec le Raspberry (PROVIDER=ssh, voir providers/ssh.py)."""
+
     host: str = os.environ.get("SSH_HOST", "192.168.50.10")
     port: int = int(_num("SSH_PORT", 22))
     username: str = os.environ.get("SSH_USER", "pi")
-    private_key_path: str = os.environ.get("SSH_KEY", "")
+    private_key_path: str = os.environ.get("SSH_KEY", "")  # vide = clés par défaut de ~/.ssh et agent SSH
+    password: str = os.environ.get("SSH_PASSWORD", "")  # à éviter (clé conseillée) ; à mettre dans backend/.env
+    # Empreintes acceptées pour le Pi : fichier known_hosts (vide = ~/.ssh/known_hosts). "none" désactive la
+    # vérification (connexion sans savoir si c'est bien le Pi : à réserver aux tests).
+    known_hosts: str = os.environ.get("SSH_KNOWN_HOSTS", "")
+    # Commande lancée sur le Pi ; le backend y ajoute --period (et --stream-url si STREAM_URL est défini).
+    command: str = os.environ.get("SSH_COMMAND", "python3 -u ~/sentinel-x/raspberry-pi/sentinel_agent.py")
+    stream_url: str = os.environ.get("STREAM_URL", "")  # flux MJPEG du Pi (mode pull), recopié dans snapshot.camera
+    # AGENT_LOCAL=1 : lance l'agent sur ce PC en mode --fake, sans Raspberry (teste toute la chaîne SSH sauf le réseau)
+    local: bool = os.environ.get("AGENT_LOCAL", "0").lower() in ("1", "true", "yes")
+    # Capteurs absents du boîtier : jamais signalés en panne, panneau masqué (la matrice thermique n'est pas montée)
+    absent_modules: tuple[str, ...] = tuple(
+        m.strip() for m in os.environ.get("ABSENT_MODULES", "thermal").split(",") if m.strip()
+    )
+
+
+@dataclass(frozen=True)
+class EdgeConfig:
+    """Edge Node ESP8266 (gaz MQ-2, présence PIR) relié en MQTTS au broker Mosquitto (infra/docker-compose.yml).
+
+    EDGE : "mqtt" (vrai boîtier), "mock" (ESP simulé, pour développer sans matériel) ou "off".
+    Défaut : "mock" avec PROVIDER=mock, sinon "off". Voir docs/mqtt-contract.md.
+    """
+
+    source: str = os.environ.get("EDGE", "mock" if os.environ.get("PROVIDER", "mock") == "mock" else "off").strip().lower()
+    host: str = os.environ.get("MQTT_HOST", "127.0.0.1")
+    port: int = int(_num("MQTT_PORT", 8883))
+    ca: str = os.environ.get("MQTT_CA", str(PKI_DIR / "ca.crt"))
+    cert: str = os.environ.get("MQTT_CERT", str(PKI_DIR / "backend.crt"))
+    key: str = os.environ.get("MQTT_KEY", str(PKI_DIR / "backend.key"))
+    client_id: str = os.environ.get("MQTT_CLIENT_ID", "backend")  # doit être le CN du certificat (ACL du broker)
+    timeout_s: float = _num("EDGE_TIMEOUT_S", 10)  # sans message d'un boîtier pendant ce délai = perte de connexion
 
 
 @dataclass(frozen=True)
@@ -120,6 +155,7 @@ class Config:
     history_size: int = int(_num("HISTORY_SIZE", 120))
     alerts_size: int = int(_num("ALERTS_SIZE", 50))
     ssh: SshConfig = field(default_factory=SshConfig)
+    edge: EdgeConfig = field(default_factory=EdgeConfig)
     vision: VisionConfig = field(default_factory=VisionConfig)
     auth: AuthConfig = field(default_factory=AuthConfig)
     thresholds: Thresholds = field(default_factory=Thresholds)

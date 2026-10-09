@@ -11,6 +11,7 @@ import UltrasonicPanel from './components/UltrasonicPanel.jsx';
 import ThermalPanel from './components/ThermalPanel.jsx';
 import MotorPanel from './components/MotorPanel.jsx';
 import EnvironmentPanel from './components/EnvironmentPanel.jsx';
+import EdgePanel from './components/EdgePanel.jsx';
 import UsersPanel from './components/UsersPanel.jsx';
 import { ThreatPanel, SystemPanel, AlertsPanel } from './components/InfoPanels.jsx';
 
@@ -28,7 +29,7 @@ function Clock() {
 // `user.role` : « admin » peut tout (moteur / caméra, source vidéo, simulations, comptes) ;
 // « agent » est en consultation seule. Le backend applique les mêmes règles : l'interface ne fait que les refléter.
 export default function Dashboard({ user, onLogout }) {
-  const { connected, provider, snapshot, analysis, vision, history, threatHistory, alerts, sendMotor, triggerScenario } = useSentinel();
+  const { connected, provider, snapshot, analysis, vision, history, threatHistory, alerts, edge, gasHistory, sendMotor, triggerScenario } = useSentinel();
   const isAdmin = user.role === 'admin';
 
   // Les détections arrivent en différé : au-delà de 3 s elles ne correspondent plus à l'image.
@@ -86,11 +87,17 @@ export default function Dashboard({ user, onLogout }) {
               </Flex>
             </Col>
             <Col xs={24} md={12} xl={8} {...rise(2)}><UltrasonicPanel ultrasonic={snapshot.ultrasonic} angle={snapshot.motor.angle} history={history} /></Col>
-            <Col xs={24} md={12} xl={8} {...rise(3)}><ThermalPanel thermal={snapshot.thermal} history={history} /></Col>
+            {snapshot.thermal && <Col xs={24} md={12} xl={8} {...rise(3)}><ThermalPanel thermal={snapshot.thermal} history={history} /></Col>}
             <Col xs={24} md={12} xl={8} {...rise(4)}><EnvironmentPanel environment={snapshot.environment} analysis={analysis} history={history} /></Col>
             <Col xs={24} md={12} xl={8} {...rise(5)}><MotorPanel motor={snapshot.motor} sendMotor={sendMotor} readOnly={!isAdmin} /></Col>
-            <Col xs={24} xl={isAdmin ? 8 : 16} {...rise(6)}>
-              <AlertsPanel alerts={alerts} triggerScenario={triggerScenario} mock={provider === 'mock' && isAdmin} />
+            {edge && <Col xs={24} md={12} xl={8} {...rise(6)}><EdgePanel edge={edge} gasHistory={gasHistory} /></Col>}
+            <Col xs={24} xl={isAdmin || edge ? 8 : 16} {...rise(7)}>
+              <AlertsPanel
+                alerts={alerts}
+                triggerScenario={triggerScenario}
+                mock={provider === 'mock' && isAdmin}
+                edgeMock={edge?.source === 'mock' && isAdmin}
+              />
             </Col>
             {isAdmin && <Col xs={24} xl={8} {...rise(7)}><UsersPanel currentUser={user} /></Col>}
           </Row>

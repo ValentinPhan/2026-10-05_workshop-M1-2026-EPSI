@@ -3,6 +3,7 @@
 Deux chemins :
   - evaluate_sensors(snapshot)  : seuils sur la donnée brute (immédiat, marche sans IA)
   - evaluate_analysis(analysis) : règles qui dépendent du modèle IA (intrusion, anomalie d'environnement)
+  - evaluate_edge(edge)         : Edge Node ESP8266 (gaz MQ-2, présence PIR), à chaque message MQTT
 Une alerte est émise au passage "condition fausse -> vraie" (pas à chaque tick).
 
 Avec le service de vision (ANALYZER=local), l'intrusion vient directement de ses événements
@@ -100,6 +101,30 @@ class AlertEngine:
                 "message": f"Pic thermique : {max_c} °C (seuil {self._th.heat_max_c:g} °C)",
             })
         return self._run(rules, s["ts"])
+
+    def evaluate_edge(self, edge: dict) -> list[dict]:
+        """Gaz au-delà du seuil et présence PIR, par boîtier. Un boîtier hors ligne ne touche pas à ses alertes
+        (sa perte est signalée par modules.py)."""
+        rules = []
+        for n in edge.get("nodes") or []:
+            if not n.get("online"):
+                continue
+            node, gas = n["node"], n.get("gasRaw")
+            if gas is not None:
+                rules.append({
+                    "key": f"gas_{node}",
+                    "level": "critical",
+                    "on": gas >= self._th.gas_raw,
+                    "message": f"Gaz détecté par {node} : MQ-2 à {gas} / 1023 (seuil {self._th.gas_raw:g})",
+                })
+            if n.get("pir") is not None:
+                rules.append({
+                    "key": f"presence_{node}",
+                    "level": "warning",
+                    "on": n["pir"] == 1,
+                    "message": f"Présence détectée par le capteur PIR de {node}",
+                })
+        return self._run(rules, now_ms())
 
     def evaluate_analysis(self, a: dict) -> list[dict]:
         # Modèle indisponible : on ne touche pas aux alertes IA, rien n'est analysé.

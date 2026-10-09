@@ -8,9 +8,9 @@ const append = (arr, item) => [...arr, item].slice(-HISTORY_MAX);
 // Point d'historique compact (même forme que _sensor_point dans backend/app/hub.py)
 const sensorPoint = (s) => ({
   ts: s.ts,
-  distanceCm: s.ultrasonic.distanceCm,
-  avgC: s.thermal.avgC,
-  maxC: s.thermal.maxC,
+  distanceCm: s.ultrasonic?.distanceCm ?? null,
+  avgC: s.thermal?.avgC ?? null, // null : pas de matrice thermique sur le boîtier réel (provider ssh)
+  maxC: s.thermal?.maxC ?? null,
   envTempC: s.environment?.tempC ?? null,
   humidityPct: s.environment?.humidityPct ?? null,
 });
@@ -28,6 +28,8 @@ export function useSentinel() {
   const [history, setHistory] = useState([]); // capteurs
   const [threatHistory, setThreatHistory] = useState([]); // { ts, score }
   const [alerts, setAlerts] = useState([]);
+  const [edge, setEdge] = useState(null); // Edge Node ESP8266 (gaz, PIR, liaison MQTTS) ; null si EDGE=off
+  const [gasHistory, setGasHistory] = useState([]); // lectures du MQ-2 du premier boîtier
   const retryRef = useRef(0);
 
   useEffect(() => {
@@ -55,6 +57,7 @@ export function useSentinel() {
             setHistory(msg.data.history.sensors);
             setThreatHistory(msg.data.history.threat);
             setAlerts(msg.data.alerts);
+            setEdge(msg.data.edge);
             break;
           case 'snapshot': {
             const s = msg.data;
@@ -72,6 +75,12 @@ export function useSentinel() {
           case 'alert':
             setAlerts((a) => [msg.data, ...a].slice(0, ALERTS_MAX));
             break;
+          case 'edge': {
+            setEdge(msg.data);
+            const gas = msg.data?.nodes?.[0]?.gasRaw;
+            if (typeof gas === 'number') setGasHistory((h) => append(h, gas));
+            break;
+          }
           case 'motor':
             setSnapshot((s) => (s ? { ...s, motor: msg.data } : s));
             break;
@@ -104,5 +113,5 @@ export function useSentinel() {
   const sendMotor = useCallback((cmd) => postJson('/api/motor', cmd), []);
   const triggerScenario = useCallback((name) => postJson(`/api/mock/${name}`), []);
 
-  return { connected, provider, snapshot, analysis, vision, history, threatHistory, alerts, sendMotor, triggerScenario };
+  return { connected, provider, snapshot, analysis, vision, history, threatHistory, alerts, edge, gasHistory, sendMotor, triggerScenario };
 }

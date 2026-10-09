@@ -24,6 +24,7 @@ from .ai.threat import threat_score
 from .auth import COOKIE, bootstrap_admin, current_user, device_token_ok, require_admin, router as auth_router, websocket_user
 from .config import CAPTURES_DIR, LOG_DIR, VIDEOS_DIR, config
 from .db import database
+from .edge import create_edge
 from .hub import Hub
 from .logger import logger
 from .providers import create_provider
@@ -35,7 +36,8 @@ database.init()  # crée les tables si besoin (SQLite : un fichier ; PostgreSQL 
 provider = create_provider(config)
 vision = create_vision(config)  # None sauf avec ANALYZER=local
 analyzer = create_analyzer(config, vision)
-hub = Hub(config, provider, analyzer, vision, database)
+edge = create_edge(config.edge, config.thresholds.gas_raw)  # Edge Node ESP8266 (MQTTS), None si EDGE=off
+hub = Hub(config, provider, analyzer, vision, database, edge)
 
 
 @asynccontextmanager
@@ -43,18 +45,20 @@ async def lifespan(_app: FastAPI):
     await asyncio.to_thread(bootstrap_admin)
     await hub.start()
     logging.getLogger("sentinel-x").info(
-        "env: %s%s, provider: %s, analyse: %s, vision: %s, base: %s, tick %d ms",
+        "env: %s%s, provider: %s, analyse: %s, vision: %s, edge: %s, base: %s, tick %d ms",
         config.env,
         " (photos d'intrusion désactivées)" if config.env == "dev" else "",
         provider.name,
         analyzer.name,
         f"YOLO sur {config.vision.source}" if vision else "off",
+        f"ESP8266 via MQTTS {config.edge.host}:{config.edge.port}" if config.edge.source == "mqtt" else config.edge.source,
         database.dialect,
         config.tick_ms,
     )
     logger.emit(
         "app.start", f"Sentinel-X démarré (env {config.env})",
         env=config.env, provider=provider.name, analyzer=analyzer.name, database=database.dialect, tickMs=config.tick_ms,
+        edge={"source": config.edge.source, "broker": f"{config.edge.host}:{config.edge.port}"},
         vision={"enabled": bool(vision), "source": config.vision.source, "model": config.vision.model, "imgsz": config.vision.imgsz},
         thresholds=asdict(config.thresholds),
         photosEnabled=config.env == "prod", logDir=str(LOG_DIR),
@@ -156,6 +160,12 @@ def video(name: str, _user: dict = Depends(current_user)):
     return FileResponse(path, media_type="video/mp4", headers={"Cache-Control": "private, max-age=3600"})
 
 
+@app.get("/api/edge")
+async def edge_status(_user: dict = Depends(current_user)):
+    """Edge Node ESP8266 : liaison MQTT et dernières mesures de chaque boîtier (null si EDGE=off)."""
+    return hub.edge_state()
+
+
 @app.get("/api/modules")
 async def modules(_user: dict = Depends(current_user)):
     """Santé de chaque module : state = ok | lost | unknown, depuis quand, dernière fois ok, raison."""
@@ -178,6 +188,8 @@ async def motor(cmd: Any = Body(None), admin: dict = Depends(require_admin)):
         state = await provider.send_motor_command(cmd)
     except ValueError as err:
         return error(400, str(err))
+    except ConnectionError as err:  # Raspberry injoignable (provider ssh)
+        return error(503, str(err))
     await hub.broadcast({"type": "motor", "data": state})
     await audit(admin, "motor", cmd)
     return state
@@ -215,16 +227,20 @@ async def vision_analyze(request: Request, annotated: bool = False, _admin: dict
     except ValueError as err:
         return error(400, str(err))
     env = hub.analysis.get("environment") if hub.analysis else None
-    threat = threat_score(hub.latest, result["detections"], env) if hub.latest else None
+    threat = threat_score({**hub.latest, "edge": hub.edge_state()}, result["detections"], env) if hub.latest else None
     return {**result, "threat": threat}
 
 
-# Scénarios de démo (mock uniquement) : intruder | heat | window
+# Scénarios de démo (mock uniquement) : intruder | heat | window (PROVIDER=mock) ; gas | presence (EDGE=mock)
+EDGE_SCENARIOS = ("gas", "presence")
+
+
 @app.post("/api/mock/{scenario}")
 async def mock_scenario(scenario: str, admin: dict = Depends(require_admin)):
-    trigger = getattr(provider, "trigger_scenario", None)
+    source = edge if scenario in EDGE_SCENARIOS else provider
+    trigger = getattr(source, "trigger_scenario", None)
     if trigger is None:
-        return error(404, "Disponible uniquement avec PROVIDER=mock")
+        return error(404, f"Disponible uniquement avec {'EDGE' if scenario in EDGE_SCENARIOS else 'PROVIDER'}=mock")
     try:
         trigger(scenario)
     except ValueError as err:

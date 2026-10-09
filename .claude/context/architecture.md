@@ -11,7 +11,7 @@
    │   └─ navigateur(s) : localhost:5173 (autres appareils du hotspot possibles)│
    └───────────────▲───────────────────────────────▲────────────────────────┘
                    │ SSH :22 (JSON capteurs ← / ordres moteur →)  │ WebSocket binaire /ws/camera (JPEG)
-                   │ [À IMPLÉMENTER : providers/ssh.py]            │ [camera_push.py — testé sans vrai Pi]
+                   │ [providers/ssh.py — testé sans vrai Pi]       │ [camera_push.py — testé sans vrai Pi]
           ┌────────┴───────────────────────────────────────────────┴────────┐
           │  Raspberry Pi (rejoint le Wi-Fi du PC, même sous-réseau)          │
           │  capteurs : ultrason, matrice thermique 8×8, DHT22, caméra, moteur│
@@ -24,10 +24,10 @@
 - **Vidéo du Pi — 3 options, toutes gérées par `VISION_SOURCE`** : (1) `push` (recommandé) : le Pi envoie ses JPEG en WebSocket sur `/ws/camera` ; (2) pull : le Pi expose un flux MJPEG/RTSP, on met l'URL dans `VISION_SOURCE` ;
   (3) `browser` : la webcam du navigateur. **Pas de MQTT pour la vidéo** (pas de notion de « dernière image », broker en plus) et **pas dans la session SSH** (une rafale d'images retarderait les ordres moteur).
   ≈ 15 Ko/image 640×480 → ~1,3 Mbit/s à 10 img/s.
-- Le sujet d'origine parlait d'un **ESP8266 → MQTTS → Mosquitto**. Le code actuel ne contient **ni ESP8266 ni MQTT** (voir `etat-et-decisions.md`, « écarts »).
+- **Edge Node ESP8266** (exigé par le sujet, décision du 8 octobre : on le garde, **en plus** du Pi) : MQ-2 (gaz) + PIR → **MQTTS** (TLS 1.2, certificat client ECDSA, ACL par CN) → **Mosquitto en Docker sur le PC** (`infra/docker-compose.yml`, port 8883) → backend (`app/edge.py`, `EDGE=mqtt`). Liaison **indépendante du Pi**. Contrat : `docs/mqtt-contract.md` ; firmware : `firmware/esp8266/` ; PKI : `infra/pki/gen-certs.sh` (`infra/pki/out/` ignoré par git, `BROKER_IP` = IP du PC sur le hotspot, défaut 192.168.137.1).
 - Une pile serveur Docker (Postgres, MQTT) existe **hors dépôt** chez l'utilisateur (`C:\Users\noamg\Bureau\sentinel-x-server`, retirée du dépôt par l'utilisateur). Son conteneur Postgres `sentinel-postgres`
-  (postgres:17) **ne publie pas le port 5432** sur la machine : pour que le backend l'utilise, il faut `ports: ["127.0.0.1:5432:5432"]` dans son compose.
-- Des commits « plan d'action `docs/PLAN.md` » et « contrat MQTT + squelette docker-compose » existent sur des branches distantes `origin/claude/*` non fusionnées : à lire (`git show origin/<branche>:docs/PLAN.md`) avant de refaire un plan.
+  (postgres:17) **ne publie pas le port 5432** sur la machine : pour que le backend l'utilise, il faut `ports: ["127.0.0.1:5432:5432"]` dans son compose. Le broker de l'ESP est celui de `infra/` (mTLS + ACL), pas celui de cette pile.
+- Plan d'action : `docs/PLAN.md` (§ 2 et 4 bis à jour au 8 octobre ; le reste = plan initial du lundi).
 
 ## 2. Backend (`backend/app/`)
 
@@ -47,17 +47,26 @@ Les callbacks du thread de vision repassent dans la boucle asyncio via `loop.cal
 ### Providers (source des données du Pi) — `providers/`
 Contrat : `name`, `async start(on_snapshot)`, `async stop()`, `get_snapshot()`, `async send_motor_command(cmd)` (+ `trigger_scenario` pour le mock).
 - `mock.py` : Pi simulé (intrus qui approche/reste/part, pic thermique, fenêtre ouverte, DHT22 avec inertie et lectures ratées, moteur avec balayage).
-- `ssh.py` : **squelette** (lève `NotImplementedError`). Plan : `asyncssh`, connexion persistante, script côté Pi qui imprime **une ligne JSON par mesure** sur stdout, ordres moteur envoyés sur son stdin (validés par `apply_motor_command`), **reconnexion automatique**.
+- `ssh.py` : `asyncssh`, **une connexion persistante**, lance `raspberry-pi/sentinel_agent.py` sur le Pi (`SSH_COMMAND`) : **un snapshot JSON par ligne** sur stdout, **une commande moteur JSON par ligne** sur stdin (validée par `apply_motor_command` avant l'envoi ; Pi absent ⇒ `ConnectionError` ⇒ `POST /api/motor` = 503). Reconnexion 1/2/5/10 s indéfiniment, keepalive 5 s, empreinte du Pi vérifiée (`~/.ssh/known_hosts` ou `SSH_KNOWN_HOSTS`, `none` = tests). Journal `provider.connect|disconnect` (une ligne par coupure), stderr de l'agent en console `[pi] …`. `AGENT_LOCAL=1` = agent `--fake` en sous-processus sur le PC. `absent_modules` (`ABSENT_MODULES`, défaut `thermal`) : `ModuleMonitor` les laisse `unknown` (jamais d'alerte).
+- `raspberry-pi/sentinel_agent.py` : servo **SG90** sur GPIO18 (gpiozero `AngularServo`, PWM pigpio si `pigpiod` tourne, sinon logiciel ; −90..90° ; pas de retour de position ; signal coupé à l'arrêt ; balayage ±60°), HC-SR04 GPIO23/24 (diviseur sur Echo), DHT22 GPIO4 (réutilise `dht22_reader.py`), stats `/proc`. `thermal: null`. stdin fermé ⇒ arrêt + servo relâché ; **un seul agent à la fois** (`/tmp/sentinel_agent.pid`, l'ancien reçoit SIGTERM). `--fake` sans GPIO. Montage : `raspberry-pi/README.md`.
 - `motor.py` : commandes `{type:'move',angle}` `{type:'step',delta}` `{type:'sweep',enabled}` `{type:'speed',value}` `{type:'stop'}` ; angle −90..90°, vitesse 5..90 °/s.
 
 **Snapshot brut** (clés en camelCase = contrat avec le front) :
 `{ts, ultrasonic:{distanceCm,maxRangeCm}, thermal:{avgC,maxC,grid[8][8]}, camera:{streamUrl,width,height,fps}, motor:{angle,target,speed,mode,moving}, environment:{tempC,humidityPct,readAt}, system:{link,cpuPct,ramPct,cpuTempC,uptimeS}}`
 
+### Edge Node ESP8266 (`edge.py`) — `EDGE=mqtt|mock|off`
+Défaut `mock` avec `PROVIDER=mock`, sinon `off`. Contrat : `name`, `async start(notify)`, `async stop()`, `state()` (+ `trigger_scenario` pour le mock : `gas`, `presence`).
+- `MqttEdge` : paho-mqtt (≥ 2.1) dans **son propre thread** (`loop_start`, reconnexion 1 → 30 s) ; ses callbacks repassent dans la boucle via `Hub._from_vision_thread` (même mécanisme que la vision). CN `backend`, certificats `infra/pki/out/` par défaut (`MQTT_CA|CERT|KEY`, `MQTT_HOST|PORT`).
+- `apply_message` (logique pure, testée) valide chaque message (topic, ≤ 512 octets, JSON, types et bornes), compte les messages perdus (`seq`), gère le Last Will `offline`.
+- `state()` = `{source, broker, connected, error, gasThreshold, nodes:[{node, online, fw, ip, seq, lost, readAt, lastSeenMs, gasRaw, pir, rssi, tempC, humidityPct}]}` ; diffusé en message WS `edge` à chaque message de l'ESP, inclus dans `hello`, dans `context()` du journal et dans `GET /api/edge`.
+- Alertes : `gas_<node>` (critical, MQ-2 ≥ `GAS_ALERT_RAW` = 600) et `presence_<node>` (warning, PIR) ; module `esp8266` (critical) : broker injoignable, `offline`, ou muet depuis `EDGE_TIMEOUT_S` (10 s). Journal : `edge.connected|disconnected|error|invalid|node_online|node_offline|pir`.
+- **Dans le score de menace** : le Hub joint `edge_state()` au snapshot passé à l'analyseur (`snapshot["edge"]`, aussi pour `POST /api/vision/analyze`) ; PIR = 10 % de la somme pondérée, gaz = plancher (voir `threat.py`). Boîtier hors ligne ou muet > `EDGE_TIMEOUT_S` : ignoré.
+
 ### Analyse (`ai/`) — `ANALYZER=mock|local`
 Contrat : `analyze(snapshot) -> {detections:[{label,confidence,bbox{x,y,w,h},polygon?}], threat:{score 0-100,label}, environment?}` — **synchrone** (appelée dans un thread).
 - `mock_analyzer.py` : faux modèle (déduit une « personne » de la tache chaude de la matrice + ultrason, latence 150–400 ms simulée).
 - `local_analyzer.py` : détections **YOLO réelles** (`vision.latest_detections()`, vides si > 2 s) + `EnvDetector` + `threat_score`.
-- `threat.py` : **score de menace = 45 % personne (confiance YOLO) + 25 % proximité ultrason + 15 % chaleur + 15 % anomalie d'environnement** ; libellé Calme < 30 ≤ Vigilance < 60 ≤ Menace.
+- `threat.py` : **score de menace = 40 % personne (confiance YOLO) + 20 % proximité ultrason + 10 % PIR (ESP8266) + 15 % chaleur + 15 % anomalie d'environnement**, puis **plancher gaz** : `max(somme, 70 × risque gaz)`, risque gaz = 0 sous la moitié de `GAS_ALERT_RAW`, 1 au seuil (une fuite seule = « Menace » ; dans la somme elle serait diluée). Libellé Calme < 30 ≤ Vigilance < 60 ≤ Menace. Tests : `backend/tests/test_threat.py`.
 - `env_anomaly.py` : détecteur d'anomalies DHT22 **en ligne**, sans dépendance (z-score glissant sur température, humidité, pentes ; apprentissage 30 mesures ≈ 1 min ; garde-fous : > 45 °C ou +2 °C/min ⇒ 100, air proche de la saturation ⇒ ≥ 70). Sortie `{score,label Apprentissage|Normal|Inhabituel|Anomalie,dewPointC,reasons[],learning}`.
   Le vrai modèle (Isolation Forest, `ml/environment/env_model.py`) **n'est pas branché** : à intégrer dans `LocalAnalyzer`.
 
@@ -101,7 +110,7 @@ REST : `/api/health` (public) · `/api/auth/{login,logout,me}` · `/api/snapshot
 WebSocket JSON `/ws` : `hello` (état complet : provider, snapshot, analysis, vision, history{sensors,threat}, alerts) · `snapshot` · `analysis` · `alert` · `motor` · `vision`. Détails et exemples dans `README.md`.
 
 ### Configuration (`config.py`, variables d'environnement ou `backend/.env`)
-`PROVIDER` (mock|ssh) · `ANALYZER` (mock|local) · `TICK_MS` · `VISION_SOURCE` · `YOLO_MODEL` · `YOLO_CONF` (0.5) · `YOLO_IMGSZ` (640) · `VISION_FPS` (10) · `VISION_ANNOTATE` · `INTRUSION_TIMEOUT_S` (3) · `CAPTURE_SETTLE_S` (1.5) ·
+`PROVIDER` (mock|ssh) · `SSH_HOST|PORT|USER|KEY|PASSWORD|KNOWN_HOSTS|COMMAND` · `STREAM_URL` · `AGENT_LOCAL` · `ABSENT_MODULES` · `ANALYZER` (mock|local) · `TICK_MS` · `VISION_SOURCE` · `YOLO_MODEL` · `YOLO_CONF` (0.5) · `YOLO_IMGSZ` (640) · `VISION_FPS` (10) · `VISION_ANNOTATE` · `INTRUSION_TIMEOUT_S` (3) · `CAPTURE_SETTLE_S` (1.5) ·
 `CAPTURE_MAX_WIDTH`/`CAPTURE_JPEG_QUALITY` (640/70) · `CAPTURES_DIR` · **`APP_ENV`** (dev|prod) · **`LOG_DIR`** · **`MONITOR_INTERVAL_S`** (60) · **`RECORD_VIDEO`** (auto) · `RECORD_PREROLL_S` · `RECORD_CRF` · `RECORD_MAX_WIDTH` · `RECORD_MAX_S` · `RECORD_KEEP_MB` · `VIDEOS_DIR` · **`MODULE_TIMEOUT_S`** (5) · **`DHT_STALE_S`** (30) · `DATABASE_URL` · `ADMIN_USERNAME`/`ADMIN_PASSWORD` · `AGENT_USERNAME`/`AGENT_PASSWORD` (champs de config présents ; **la création automatique de l'agent n'est plus dans `bootstrap_admin`** : voir l'état) · `DEVICE_TOKEN` · `SESSION_HOURS` · `COOKIE_SECURE`. Seuils d'alerte dans `Thresholds` (80 cm, 45 °C, 0.6, score DHT22 70).
 
 ## 3. Frontend (`frontend/`)

@@ -50,7 +50,7 @@ export function SystemPanel({ system }) {
       {load('CPU', system.cpuPct)}
       {load('RAM', system.ramPct)}
       <Flex gap={32} wrap>
-        <Stat title="Temp. CPU" value={system.cpuTempC} suffix="°C" />
+        <Stat title="Temp. CPU" value={system.cpuTempC ?? '—'} suffix={system.cpuTempC != null && '°C'} />
         <Stat title="Uptime" value={fmtUptime(system.uptimeS)} />
       </Flex>
     </Panel>
@@ -59,14 +59,16 @@ export function SystemPanel({ system }) {
 
 const LEVEL_TONE = { critical: 'danger', warning: 'warn', info: 'info' };
 
-export function AlertsPanel({ alerts, triggerScenario, mock }) {
+export function AlertsPanel({ alerts, triggerScenario, mock, edgeMock }) {
   return (
     <Panel title="Journal des banana-alertes" extra={<StatusTag>{alerts.length}</StatusTag>}>
-      {mock && (
+      {(mock || edgeMock) && (
         <Flex gap={8} wrap>
-          <Button size="small" onClick={() => triggerScenario('intruder')}>Simuler un intrus</Button>
-          <Button size="small" onClick={() => triggerScenario('heat')}>Simuler un pic thermique</Button>
-          <Button size="small" onClick={() => triggerScenario('window')}>Simuler une fenêtre ouverte</Button>
+          {mock && <Button size="small" onClick={() => triggerScenario('intruder')}>Simuler un intrus</Button>}
+          {mock && <Button size="small" onClick={() => triggerScenario('heat')}>Simuler un pic thermique</Button>}
+          {mock && <Button size="small" onClick={() => triggerScenario('window')}>Simuler une fenêtre ouverte</Button>}
+          {edgeMock && <Button size="small" onClick={() => triggerScenario('gas')}>Simuler une fuite de gaz</Button>}
+          {edgeMock && <Button size="small" onClick={() => triggerScenario('presence')}>Simuler une présence (PIR)</Button>}
         </Flex>
       )}
       <List

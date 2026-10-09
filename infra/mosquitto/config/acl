@@ -1,0 +1,12 @@
+# ACL Mosquitto — l'identifiant est le CN du certificat client.
+# Voir docs/mqtt-contract.md. Tout ce qui n'est pas listé est refusé.
+
+# Boîtier ESP8266 n°1 : n'écrit que sur ses propres topics, ne lit rien
+user esp-node-01
+topic write sentinel/esp-node-01/telemetry
+topic write sentinel/esp-node-01/event
+topic write sentinel/esp-node-01/status
+
+# Backend FastAPI (PC) : lit tout, n'écrit rien
+user backend
+topic read sentinel/#

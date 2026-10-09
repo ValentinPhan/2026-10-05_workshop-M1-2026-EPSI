@@ -16,6 +16,7 @@
   --c-threat: #ff5a4f;
   --c-env-temp: #f5a524;
   --c-env-hum: #6aa5ff;
+  --c-gas: #3ecf8e;
   --font-display: 'Bricolage Grotesque Variable', 'Geist Variable', system-ui, sans-serif;
   --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
   --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);

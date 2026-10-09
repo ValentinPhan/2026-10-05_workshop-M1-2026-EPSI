@@ -8,10 +8,12 @@ Modules surveillés (une entrée chacun dans l'état renvoyé) :
   motor       état moteur absent du snapshot
   camera      caméra externe : flux interrompu / injoignable, ou plus d'images alors qu'elle en envoyait
   ai          le modèle d'analyse ne répond plus
+  esp8266     Edge Node (EDGE=mqtt|mock) : broker injoignable, boîtier hors ligne (LWT) ou muet depuis EDGE_TIMEOUT_S
 
 Quand le Raspberry est injoignable, ses capteurs ne sont pas évalués (indéterminés) : une seule perte est signalée,
 la bonne. Chaque état est « ok », « lost » ou « unknown » (pas encore de preuve dans un sens ou dans l'autre).
 Seuls les passages ok/unknown -> lost et lost -> ok produisent une transition (donc un événement du journal).
+Un capteur absent du boîtier (`absent`, ex. la matrice thermique non montée) reste « unknown » : jamais d'alerte.
 Logique pure, sans I/O : le Hub l'appelle périodiquement et journalise / alerte (voir hub._watch_modules).
 """
 from typing import Any
@@ -24,8 +26,9 @@ LABELS = {
     "motor": "moteur",
     "camera": "caméra",
     "ai": "modèle IA",
+    "esp8266": "Edge Node ESP8266",
 }
-CRITICAL = {"raspberry", "camera"}  # niveau d'alerte « critical » ; les autres sont « warning »
+CRITICAL = {"raspberry", "camera", "esp8266"}  # niveau d'alerte « critical » ; les autres sont « warning »
 
 Health = tuple[bool | None, str | None]  # (ok ?, raison) ; ok=None : indéterminé
 
@@ -35,8 +38,13 @@ def _num(value: Any) -> bool:
 
 
 class ModuleMonitor:
-    def __init__(self, timeout_s: float, dht_stale_s: float, started_ms: int):
+    def __init__(
+        self, timeout_s: float, dht_stale_s: float, started_ms: int, absent: frozenset[str] = frozenset(),
+        edge_timeout_s: float = 10,
+    ):
+        self._absent = absent
         self._timeout_ms = timeout_s * 1000
+        self._edge_timeout_ms = edge_timeout_s * 1000
         self._dht_stale_ms = dht_stale_s * 1000
         self._started_ms = started_ms
         self._camera_was_running = False
@@ -50,7 +58,30 @@ class ModuleMonitor:
         self._camera_was_running = False
 
     # ---- évaluation ----
-    def _health(self, now: int, snapshot: dict | None, snapshot_at: int | None, vision: dict | None, analysis: dict | None) -> dict[str, Health]:
+    def _edge_health(self, now: int, edge: dict) -> Health:
+        """L'ESP a sa propre liaison (MQTT) : évalué même quand le Raspberry est injoignable."""
+        if not edge.get("connected"):
+            if now - self._started_ms < self._edge_timeout_ms:
+                return None, None  # connexion au broker en cours (TLS)
+            return False, edge.get("error") or "broker MQTT injoignable"
+        nodes = edge.get("nodes") or []
+        if not nodes:
+            if now - self._started_ms < self._edge_timeout_ms:
+                return None, None  # laisser à l'ESP le temps de se connecter
+            return False, "aucun boîtier connecté au broker"
+        for n in nodes:
+            if not n.get("online"):
+                return False, f"{n['node']} hors ligne"
+            seen = n.get("lastSeenMs")
+            if not _num(seen) or now - seen > self._edge_timeout_ms:
+                silence = f"depuis {(now - seen) / 1000:.0f} s" if _num(seen) else "depuis le démarrage"
+                return False, f"{n['node']} muet {silence}"
+        return True, None
+
+    def _health(
+        self, now: int, snapshot: dict | None, snapshot_at: int | None, vision: dict | None, analysis: dict | None,
+        edge: dict | None = None,
+    ) -> dict[str, Health]:
         health: dict[str, Health] = {}
 
         age = now - (snapshot_at if snapshot_at is not None else self._started_ms)
@@ -95,12 +126,19 @@ class ModuleMonitor:
 
         if analysis is not None:
             health["ai"] = (True, None) if analysis.get("ok") else (False, analysis.get("error") or "modèle IA indisponible")
+        if edge is not None:
+            health["esp8266"] = self._edge_health(now, edge)
+        for name in self._absent & health.keys():
+            health[name] = (None, None)  # non monté : ni panne ni retour à signaler
         return health
 
-    def check(self, now: int, snapshot: dict | None, snapshot_at: int | None, vision: dict | None, analysis: dict | None) -> list[dict]:
+    def check(
+        self, now: int, snapshot: dict | None, snapshot_at: int | None, vision: dict | None, analysis: dict | None,
+        edge: dict | None = None,
+    ) -> list[dict]:
         """Met à jour les états et renvoie les transitions {module, label, to, reason, ...} survenues."""
         transitions = []
-        for name, (ok, reason) in self._health(now, snapshot, snapshot_at, vision, analysis).items():
+        for name, (ok, reason) in self._health(now, snapshot, snapshot_at, vision, analysis, edge).items():
             state = self._states.setdefault(name, {"state": "unknown", "sinceMs": now, "lastOkMs": None, "reason": None})
             if ok is None:
                 continue
