@@ -86,7 +86,7 @@ Le dashboard est protégé par un compte. Deux rôles :
 | **agent** | consulter : données, vidéo YOLO, alertes, photos. Les commandes sont désactivées (« Lecture seule »). |
 | **admin** | tout : piloter le moteur / la position de la caméra, changer la source vidéo, lancer les simulations, créer / supprimer des comptes, voir le journal d'audit. |
 
-- **Premier lancement** : si la base n'a aucun utilisateur, le compte `admin` est créé. Sans `ADMIN_PASSWORD`, **un mot de passe aléatoire est affiché une seule fois dans la console du backend** (à noter). Les agents se créent ensuite depuis le dashboard (panneau « Comptes et journal d'audit », admin seulement).
+- **Premier lancement** : si la base n'a aucun utilisateur, le compte `admin` est créé. Sans `ADMIN_PASSWORD`, **un mot de passe aléatoire est affiché une seule fois dans la console du backend** (à noter). Un compte agent est créé de la même façon si `AGENT_PASSWORD` est défini dans `backend/.env` ; les autres se créent ensuite depuis le dashboard (panneau « Comptes et journal d'audit », admin seulement).
 - **Mot de passe perdu** : `cd backend` puis `python -m app.cli passwd admin` (voir aussi `list` et `create <identifiant> <admin|agent>`), avec le venv.
 - **Base** : SQLite par défaut (un fichier `backend/data/sentinel.db`, rien à installer). **PostgreSQL** : définir `DATABASE_URL=postgresql+psycopg://utilisateur:mot-de-passe@hote:5432/base` dans `backend/.env` (modèle : `backend/.env.example`, fichier ignoré par git) ; le même code tourne sur les deux, les tables sont créées au démarrage. Le conteneur Postgres du serveur doit publier son port 5432 sur la machine du backend.
 - **Ce qui est enregistré** : comptes et sessions, **historique des alertes** (le journal survit à un redémarrage), **journal d'audit** (connexions, échecs, commandes moteur, changement de source vidéo, simulations, gestion des comptes).
@@ -110,6 +110,7 @@ Le dashboard est protégé par un compte. Deux rôles :
 | `TICK_MS` | `1000` | période des capteurs |
 | `DATABASE_URL` | SQLite `backend/data/sentinel.db` | base de données (`postgresql+psycopg://…` pour PostgreSQL) |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | `admin` / aléatoire | compte admin créé au premier lancement |
+| `AGENT_USERNAME` / `AGENT_PASSWORD` | `agent` / vide | compte agent (consultation seule) créé au démarrage s'il n'existe pas, seulement si le mot de passe est renseigné (8 caractères min) |
 | `DEVICE_TOKEN` | vide | jeton du Raspberry pour `/ws/camera` (vide = le Pi est refusé) |
 | `SESSION_HOURS` / `COOKIE_SECURE` | `12` / `0` | durée des sessions / cookie réservé au HTTPS |
 

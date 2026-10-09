@@ -1,12 +1,12 @@
-import React from 'react';
 import { Flex, Progress, Typography } from 'antd';
 import { Panel, StatusTag, LineChart, Stat } from './ui.jsx';
+import { STATUS_COLORS } from '../threat.js';
 
 // Capteur DHT22 : mesures brutes immédiates (température, humidité) + analyse du modèle IA en différé
 // (point de rosée, score d'anomalie, raisons).
 const STALE_MS = 10_000; // le DHT22 mesure toutes les 2 s : au-delà de 10 s sans lecture, il est muet
 const TONES = { Apprentissage: 'info', Normal: 'ok', Inhabituel: 'warn', Anomalie: 'danger' };
-const COLORS = { Normal: '#3ecf8e', Inhabituel: '#f5a524', Anomalie: '#ff5a5f' };
+const COLORS = { Normal: STATUS_COLORS.ok, Inhabituel: STATUS_COLORS.warn, Anomalie: STATUS_COLORS.danger };
 
 const series = (history, key) => history.map((h) => h[key]).filter((v) => typeof v === 'number');
 

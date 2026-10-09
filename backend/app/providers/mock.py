@@ -9,6 +9,7 @@ import random
 import time
 from typing import Awaitable, Callable
 
+from ..clock import now_ms
 from .motor import apply_motor_command, clamp
 
 GRID = 8  # matrice thermique 8x8 (type AMG8833)
@@ -116,7 +117,7 @@ class MockProvider:
         d["last"] = {
             "tempC": round(d["tempC"] + _noise(0.1), 1),
             "humidityPct": round(clamp(d["humidityPct"] + _noise(0.3), 0, 100), 1),
-            "readAt": int(time.time() * 1000),
+            "readAt": now_ms(),
         }
 
     # ---- construction du snapshot brut ----
@@ -155,7 +156,7 @@ class MockProvider:
 
     def get_snapshot(self) -> dict:
         return {
-            "ts": int(time.time() * 1000),
+            "ts": now_ms(),
             "ultrasonic": {
                 "distanceCm": round(clamp(self._intruder["distance"] + _noise(1.5), 2, MAX_RANGE_CM), 1),
                 "maxRangeCm": MAX_RANGE_CM,

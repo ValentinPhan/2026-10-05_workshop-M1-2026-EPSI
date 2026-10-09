@@ -28,6 +28,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from ..clock import now_ms
 from ..config import VisionConfig
 from .detector import YoloDetector
 from .recorder import ClipRecorder
@@ -148,7 +149,7 @@ class VisionService:
             ok, jpeg = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, self._cfg.jpeg_quality])
             encoded = base64.b64encode(jpeg.tobytes()).decode() if ok else None
         height, width = frame.shape[:2]
-        return {"ts": int(time.time() * 1000), "width": width, "height": height, "detections": detections, "annotated": encoded}
+        return {"ts": now_ms(), "width": width, "height": height, "detections": detections, "annotated": encoded}
 
     def set_push_mode(self, enabled: bool) -> dict:
         """Source des images : le navigateur (True) ou la caméra du backend (False).
@@ -281,7 +282,7 @@ class VisionService:
         encoded, jpeg = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, self._cfg.jpeg_quality])
         if encoded:
             meta = {
-                "ts": int(time.time() * 1000),
+                "ts": now_ms(),
                 "width": image.shape[1],
                 "height": image.shape[0],
                 "annotated": annotated is not None,  # True : carrés déjà dessinés dans l'image, ne pas les redessiner

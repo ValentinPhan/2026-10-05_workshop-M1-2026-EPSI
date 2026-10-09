@@ -1,48 +1,238 @@
-/* Styles des visuels sur mesure (caméra, radar, cadran, heatmap, courbes).
-   Tout le reste (cartes, boutons, tags, listes…) est géré par Ant Design. */
+/* Identité visuelle « labo de Gru » : fond encre, jaune Minion, bleu denim.
+   Ant Design gère les composants (voir le thème dans main.jsx) ; ici : jetons, ambiance, mascotte et visuels sur mesure. */
 :root {
-  --surface-2: #1a232e;
-  --border: #243140;
-  --muted: #8b9bab;
-  --accent: #4fc3dc;
+  --bg: #0b0d12;
+  --surface: #12151c;
+  --surface-2: #181c25;
+  --border: #262b37;
+  --muted: #8d95a5;
+  --accent: #ffd83b;
   --warn: #f5a524;
-  --danger: #ff5a5f;
-  --c-ultra: #4fc3dc;
+  --danger: #ff5a4f;
+  --neon: 47, 168, 255; /* grille Tron, en composantes RGB pour rgba(var(--neon), α) */
+  --grid: 64px;
+  --c-ultra: #6aa5ff;
   --c-thermal: #f5894a;
-  --c-threat: #ff5a5f;
+  --c-threat: #ff5a4f;
   --c-env-temp: #f5a524;
-  --c-env-hum: #6c8cff;
+  --c-env-hum: #6aa5ff;
+  --font-display: 'Bricolage Grotesque Variable', 'Geist Variable', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-body { margin: 0; }
+/* la lueur d'un panneau ne s'hérite pas : poser --mx / --my sur la carte ne recalcule pas le style de ses enfants */
+@property --mx { syntax: '<length-percentage>'; inherits: false; initial-value: 50%; }
+@property --my { syntax: '<length-percentage>'; inherits: false; initial-value: 0%; }
 
-.chart { width: 100%; display: block; background: var(--surface-2); border-radius: 8px; }
-.chart-empty { display: grid; place-items: center; color: var(--muted); background: var(--surface-2); border-radius: 8px; }
+body {
+  margin: 0;
+  background:
+    radial-gradient(900px 520px at 8% -8%, rgba(255, 216, 59, 0.10), transparent 62%),
+    radial-gradient(800px 600px at 100% 0%, rgba(74, 134, 212, 0.14), transparent 58%),
+    var(--bg);
+  background-attachment: fixed;
+}
+
+/* grille néon (Tron) derrière toute l'app : fines lignes bleues qui s'estompent vers le bas, et deux flaques de lumière
+   (lignes plus vives avec un liseré lumineux) qui respirent lentement. Pas de filter : seule l'opacité est animée, ce qui
+   reste composé par le GPU. Les panneaux sont opaques : la grille ne se voit qu'entre et autour d'eux. */
+body::before, body::after { content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+body::before {
+  background-image:
+    linear-gradient(rgba(var(--neon), 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--neon), 0.14) 1px, transparent 1px);
+  background-size: var(--grid) var(--grid);
+  background-position: center top;
+  -webkit-mask-image: radial-gradient(ellipse 90% 85% at 50% 0%, #000 15%, transparent 90%);
+  mask-image: radial-gradient(ellipse 90% 85% at 50% 0%, #000 15%, transparent 90%);
+}
+body::after {
+  background-image:
+    linear-gradient(rgba(var(--neon), 0.55) 0 1px, rgba(var(--neon), 0.12) 1px 4px, transparent 4px),
+    linear-gradient(90deg, rgba(var(--neon), 0.55) 0 1px, rgba(var(--neon), 0.12) 1px 4px, transparent 4px);
+  background-size: var(--grid) var(--grid);
+  background-position: center top;
+  will-change: opacity;
+  -webkit-mask-image: radial-gradient(circle 420px at 12% 8%, #000, transparent 70%), radial-gradient(circle 480px at 92% 70%, #000, transparent 70%);
+  mask-image: radial-gradient(circle 420px at 12% 8%, #000, transparent 70%), radial-gradient(circle 480px at 92% 70%, #000, transparent 70%);
+  animation: breathe 7s ease-in-out infinite;
+}
+@keyframes breathe { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.9; } }
+
+.app-shell { position: relative; min-height: 100vh; }
+.app-shell > * { position: relative; z-index: 1; }
+
+/* alerte ambiante : le bord de l'écran respire quand la menace monte */
+.app-shell::before {
+  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 40; opacity: 0;
+  transition: opacity 0.6s;
+}
+.app-shell[data-mood='vigilance']::before { opacity: 1; box-shadow: inset 0 0 120px rgba(245, 165, 36, 0.14); }
+.app-shell[data-mood='menace']::before { opacity: 1; box-shadow: inset 0 0 170px rgba(255, 64, 52, 0.30); animation: alarm 1.6s ease-in-out infinite; }
+@keyframes alarm { 50% { opacity: 0.45; } } /* seule l'opacité s'anime : un box-shadow flou animé serait repeint à chaque image */
+
+/* entrée en cascade des panneaux */
+.rise { animation: rise 0.75s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 70ms); }
+@keyframes rise { from { opacity: 0; transform: translateY(16px); } }
+
+/* ---- en-tête ---- */
+.wordmark { font-family: var(--font-display); font-weight: 800; font-size: 30px; line-height: 1; letter-spacing: 0.02em; margin: 0; color: #f3f5f9; }
+.wordmark b { color: var(--accent); font-weight: 800; }
+.tagline { font-size: 12.5px; color: var(--muted); letter-spacing: 0.04em; }
+.say {
+  position: relative; margin-left: 4px; padding: 5px 11px; border: 1px solid var(--border); border-radius: 10px 10px 10px 2px;
+  background: var(--surface); font: 500 12px/1.3 var(--font-mono); color: #dfe4ee;
+  animation: pop 0.45s var(--ease-out) backwards; white-space: nowrap;
+}
+.app-shell[data-mood='menace'] .say { border-color: rgba(255, 90, 79, 0.6); color: #ffb4ae; }
+@keyframes pop { from { opacity: 0; transform: translateX(-8px) scale(0.92); } }
+
+/* ---- panneaux ---- */
+.panel.ant-card { position: relative; overflow: hidden; background: var(--surface); border: 1px solid var(--border); transition: border-color 0.3s; }
+.panel.ant-card:hover { border-color: #353c4c; }
+.panel.ant-card::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.35s;
+  background: radial-gradient(360px circle at var(--mx, 50%) var(--my, 0%), rgba(255, 216, 59, 0.085), transparent 62%);
+}
+.panel.ant-card:hover::before { opacity: 1; }
+.panel.ant-card::after { content: ''; position: absolute; left: 20px; top: 0; width: 26px; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent); }
+.panel .ant-card-head { border-bottom-color: var(--border); }
+.panel .ant-card-head-title { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #d3d9e5; }
+.ant-statistic-content, .ant-statistic-content-value { font-family: var(--font-mono); }
+
+.chart { width: 100%; display: block; background: var(--surface-2); border-radius: 10px; }
+.chart-empty { display: grid; place-items: center; color: var(--muted); background: var(--surface-2); border-radius: 10px; }
 .chart-threshold { stroke: var(--danger); stroke-width: 1; stroke-dasharray: 4 4; opacity: 0.7; }
 
-/* caméra */
-.feed-wrap { position: relative; border-radius: 8px; overflow: hidden; background: #000; }
+/* ---- caméra : viseur ---- */
+.feed-wrap { position: relative; border-radius: 12px; overflow: hidden; background: #000; }
 .feed { width: 100%; display: block; aspect-ratio: 4 / 3; object-fit: cover; }
 .feed-canvas { object-fit: contain; background: #000; }
 .feed-overlay { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: 8px; color: var(--muted); text-align: center; padding: 16px; }
-.feed-tag { position: absolute; left: 8px; bottom: 8px; font: 11px ui-monospace, monospace; background: rgba(0, 0, 0, 0.6); padding: 2px 6px; border-radius: 4px; }
+.feed-tag { position: absolute; left: 14px; bottom: 14px; z-index: 3; font: 11px var(--font-mono); background: rgba(0, 0, 0, 0.65); padding: 3px 8px; border-radius: 4px; }
+.feed-wrap::after {
+  content: ''; position: absolute; inset: 10px; z-index: 2; pointer-events: none;
+  background:
+    linear-gradient(var(--accent), var(--accent)) top left / 20px 2px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top left / 2px 20px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top right / 20px 2px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) top right / 2px 20px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom left / 20px 2px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom left / 2px 20px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom right / 20px 2px no-repeat,
+    linear-gradient(var(--accent), var(--accent)) bottom right / 2px 20px no-repeat;
+}
+.feed-wrap::before {
+  content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(to bottom, transparent 0 70%, rgba(255, 216, 59, 0.10) 85%, transparent 100%);
+  animation: sweep 5.5s linear infinite; /* transform : composé par le GPU, contrairement à `top` */
+}
+@keyframes sweep { from { transform: translateY(-100%); } to { transform: translateY(100%); } }
 
-/* radar */
+/* ---- radar ---- */
 .radar { width: 100%; }
 .radar-ring { fill: none; stroke: var(--border); stroke-width: 1; }
-.radar-beam { stroke: var(--accent); stroke-width: 2; opacity: 0.8; transition: all 0.4s linear; }
+.radar-beam { stroke: var(--accent); stroke-width: 2; opacity: 0.85; transition: all 0.4s linear; }
 .radar-blip { fill: var(--accent); transition: all 0.4s linear; }
 .radar-blip.near { fill: var(--danger); }
 .radar-label { fill: var(--muted); font-size: 9px; text-anchor: middle; }
 
-/* thermique */
-.heatmap { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; aspect-ratio: 1; max-width: 240px; width: 100%; margin: 0 auto; }
-.heat-cell { border-radius: 2px; transition: background 0.5s; }
+/* ---- thermique ---- */
+.heatmap { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; aspect-ratio: 1; max-width: 240px; width: 100%; margin: 0 auto; }
+.heat-cell { border-radius: 3px; transition: background 0.5s; }
 
-/* moteur */
+/* ---- moteur ---- */
 .dial { width: 100%; max-width: 260px; margin: 0 auto; }
 .dial-arc { fill: none; stroke: var(--border); stroke-width: 6; stroke-linecap: round; }
 .dial-tick { stroke: var(--muted); stroke-width: 1.5; }
 .dial-needle { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
 .dial-hub { fill: var(--accent); }
 .dial-target { fill: var(--warn); }
+
+/* ---- connexion ---- */
+.login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.login-stack { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 380px; }
+.login-title { font-family: var(--font-display); font-weight: 800; font-size: 44px; line-height: 1; margin: 18px 0 4px; color: #f3f5f9; letter-spacing: 0.01em; }
+.login-title b { color: var(--accent); }
+.login-card.ant-card { width: 100%; margin-top: 22px; background: rgba(18, 21, 28, 0.85); border: 1px solid var(--border); box-shadow: 0 30px 60px -30px rgba(0, 0, 0, 0.8); }
+.login-card.shake { animation: nope 0.45s; }
+@keyframes nope { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+
+/* ---- mascotte ---- */
+/* pas de drop-shadow sur le SVG racine : ses enfants s'animent en continu, le flou serait recalculé à chaque image
+   (l'ombre au sol est l'ellipse .minion-shadow, la lueur de menace est .aura) */
+.minion { display: block; overflow: visible; animation: drop 1s cubic-bezier(0.3, 1.5, 0.5, 1) backwards; transition: filter 0.5s; }
+.minion .aura { display: none; }
+.minion[data-mood='menace'] .aura { display: inline; }
+@keyframes drop { from { opacity: 0; transform: translateY(-40px) scaleY(1.12); } }
+.minion-body { transform-origin: 100px 240px; animation: float 4.2s ease-in-out infinite; }
+@keyframes float { 50% { transform: translateY(-4px); } }
+.minion-shadow { fill: rgba(0, 0, 0, 0.5); transform-origin: 100px 258px; animation: shade 4.2s ease-in-out infinite; }
+@keyframes shade { 50% { transform: scaleX(0.88); opacity: 0.7; } }
+
+.minion .pupil { transition: transform 0.09s ease-out; }
+.minion .pupil-core { transform-box: fill-box; transform-origin: center; transition: transform 0.3s var(--ease-out); }
+.minion .iris { fill: #8a5a2b; transition: fill 0.3s; }
+.minion .glint { fill: none; stroke: rgba(255, 255, 255, 0.7); stroke-width: 2.2; stroke-linecap: round; }
+.minion .lid { transform-box: fill-box; transform-origin: top; transform: scaleY(0); animation: blink 5.5s infinite; }
+@keyframes blink { 0%, 93%, 100% { transform: scaleY(0); } 95.5% { transform: scaleY(1); } }
+
+.minion .brows path { transform-box: fill-box; transform-origin: center; transition: transform 0.3s var(--ease-out); }
+.minion .brows { opacity: 0; transition: opacity 0.3s; }
+.minion .mouth { fill: none; stroke: #26262c; stroke-width: 4; stroke-linecap: round; display: none; }
+.minion .mouth-menace, .minion .zzz { display: none; }
+.minion .zzz { font: 800 18px var(--font-display); fill: var(--muted); animation: zzz 2.4s ease-in-out infinite; }
+.minion .zzz-2 { animation-delay: 0.9s; font-size: 14px; }
+@keyframes zzz { 0% { opacity: 0; transform: translateY(8px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translateY(-8px); } }
+
+.minion .minion-arm { transition: transform 0.4s var(--ease-out); }
+.minion .minion-arm-l { transform-origin: 42px 164px; }
+.minion .minion-arm-r { transform-origin: 158px 164px; }
+
+.minion[data-mood='calme'] .mouth-calme { display: inline; }
+
+.minion[data-mood='vigilance'] .mouth-vigilance { display: inline; }
+.minion[data-mood='vigilance'] .brows { opacity: 1; }
+.minion[data-mood='vigilance'] .brow-l { transform: rotate(-14deg); }
+.minion[data-mood='vigilance'] .brow-r { transform: rotate(14deg); }
+.minion[data-mood='vigilance'] .iris { fill: #c98a1b; }
+.minion[data-mood='vigilance'] .pupil-core { transform: scale(0.88); }
+
+.minion[data-mood='menace'] .mouth-menace { display: inline; }
+.minion[data-mood='menace'] .brows { opacity: 1; }
+.minion[data-mood='menace'] .brows path { transform: translateY(3px); }
+.minion[data-mood='menace'] .iris { fill: #d6342b; }
+.minion[data-mood='menace'] .pupil-core { transform: scale(0.62); }
+.minion[data-mood='menace'] .minion-body { animation: shake 1.3s ease-in-out infinite; }
+.minion[data-mood='menace'] .minion-arm-l { transform: rotate(150deg); animation: wave-l 0.38s ease-in-out infinite alternate; }
+.minion[data-mood='menace'] .minion-arm-r { transform: rotate(-150deg); animation: wave-r 0.38s ease-in-out infinite alternate; }
+@keyframes shake { 0%, 45%, 100% { transform: translate(0, 0); } 5% { transform: translate(-3px, 0) rotate(-1.2deg); } 12% { transform: translate(3px, 0) rotate(1.2deg); } 19% { transform: translate(-3px, 0) rotate(-1.2deg); } 26% { transform: translate(3px, 0) rotate(1.2deg); } 33% { transform: translate(-2px, 0); } 40% { transform: translate(2px, 0); } }
+@keyframes wave-l { from { transform: rotate(138deg); } to { transform: rotate(165deg); } }
+@keyframes wave-r { from { transform: rotate(-138deg); } to { transform: rotate(-165deg); } }
+
+.minion-head { margin-left: 20px; } /* de la place pour le gyrophare gauche, qui déborde du corps */
+
+/* gyrophares : cachés sauf en menace, clignotement alternatif gauche / droite calé sur le « bee-do » (0,9 s) */
+.minion .beacon { display: none; }
+.minion[data-mood='menace'] .beacon { display: inline; }
+.minion .beacon-rays { fill: none; stroke: #ff6a5e; stroke-width: 3; stroke-linecap: round; }
+.minion .beacon-glow, .minion .beacon-rays { opacity: 0; animation: beacon-flash 0.9s ease-in-out infinite; }
+.minion .beacon-dome { animation: dome-flash 0.9s ease-in-out infinite; }
+.minion .beacon-1 :is(.beacon-glow, .beacon-rays, .beacon-dome) { animation-delay: 0.45s; }
+.minion .beacon-top :is(.beacon-glow, .beacon-rays, .beacon-dome) { animation-duration: 0.45s; }
+.minion[data-mood='menace'] .hair { display: none; } /* le gyrophare du dessus prend la place des cheveux */
+@keyframes beacon-flash { 0%, 100% { opacity: 0.05; } 25% { opacity: 1; } 60% { opacity: 0.1; } }
+@keyframes dome-flash { 0%, 100% { opacity: 0.6; } 25% { opacity: 1; } 60% { opacity: 0.65; } } /* opacity et non filter : pas de repaint logiciel */
+
+/* hors ligne : il dort ; « shy » (mot de passe en cours de saisie) : il se couvre les yeux */
+.minion[data-mood='offline'] { filter: grayscale(0.4) brightness(0.82); }
+.minion[data-mood='offline'] .mouth-offline { display: inline; }
+.minion[data-mood='offline'] .zzz { display: inline; }
+.minion[data-mood='offline'] .lid, .minion[data-shy='true'] .lid { animation: none; transform: scaleY(1); transition: transform 0.25s var(--ease-out); }
+.minion[data-shy='true'] .mouth-calme { display: inline; }
+
+@media (prefers-reduced-motion: reduce) {
+  .minion, .minion *, .rise, .feed-wrap::before, .app-shell::before, body::after, .say, .login-card { animation: none !important; }
+  .minion[data-mood='menace'] .beacon-glow, .minion[data-mood='menace'] .beacon-rays { opacity: 0.7; }
+}

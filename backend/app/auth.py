@@ -112,17 +112,27 @@ def _check_rate(key: str) -> None:
 
 # ---- premier lancement ----
 def bootstrap_admin() -> None:
-    """S'il n'existe aucun utilisateur, crée le compte admin (mot de passe : ADMIN_PASSWORD ou aléatoire)."""
-    if database.count_users():
-        return
+    """Crée les comptes du .env absents de la base : admin (ADMIN_*) s'il n'existe aucun utilisateur, agent (AGENT_*).
+
+    Un compte déjà présent n'est jamais modifié (changer le mot de passe dans le .env ne change pas celui de la base :
+    `python -m app.cli passwd <identifiant>`).
+    """
     cfg = config.auth
-    password = cfg.admin_password or secrets.token_urlsafe(9)
-    database.create_user(cfg.admin_username, hash_password(password), "admin")
-    database.audit(None, "bootstrap", f"compte admin « {cfg.admin_username} » créé")
-    if cfg.admin_password:
-        log.info(green(f"compte admin « {cfg.admin_username} » créé (mot de passe : variable ADMIN_PASSWORD)"))
-    else:
-        log.warning(green(f"COMPTE ADMIN CRÉÉ — identifiant : {cfg.admin_username} · mot de passe : {password}  (affiché une seule fois, à noter)"))
+    if not database.count_users():
+        password = cfg.admin_password or secrets.token_urlsafe(9)
+        database.create_user(cfg.admin_username, hash_password(password), "admin")
+        database.audit(None, "bootstrap", f"compte admin « {cfg.admin_username} » créé")
+        if cfg.admin_password:
+            log.info(green(f"compte admin « {cfg.admin_username} » créé (mot de passe : variable ADMIN_PASSWORD)"))
+        else:
+            log.warning(green(f"COMPTE ADMIN CRÉÉ — identifiant : {cfg.admin_username} · mot de passe : {password}  (affiché une seule fois, à noter)"))
+    if cfg.agent_password and database.get_user_by_name(cfg.agent_username) is None:
+        if len(cfg.agent_password) < MIN_PASSWORD_LENGTH:
+            log.warning(f"AGENT_PASSWORD trop court ({MIN_PASSWORD_LENGTH} caractères minimum) : compte agent non créé")
+            return
+        database.create_user(cfg.agent_username, hash_password(cfg.agent_password), "agent")
+        database.audit(None, "bootstrap", f"compte agent « {cfg.agent_username} » créé")
+        log.info(green(f"compte agent « {cfg.agent_username} » créé (mot de passe : variable AGENT_PASSWORD)"))
 
 
 # ---- routes ----
@@ -142,6 +152,11 @@ class NewUserBody(BaseModel):
 
 class PasswordBody(BaseModel):
     password: str = Field(max_length=200)
+
+
+def _require_long_password(password: str) -> None:
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise HTTPException(400, f"Mot de passe : {MIN_PASSWORD_LENGTH} caractères minimum")
 
 
 def _public(user: dict) -> dict:
@@ -193,8 +208,7 @@ def create_user(body: NewUserBody, admin: dict = Depends(require_admin)):
         raise HTTPException(400, "Identifiant : 3 à 32 caractères (lettres, chiffres, _ . -)")
     if body.role not in ROLES:
         raise HTTPException(400, "Rôle attendu : admin ou agent")
-    if len(body.password) < MIN_PASSWORD_LENGTH:
-        raise HTTPException(400, f"Mot de passe : {MIN_PASSWORD_LENGTH} caractères minimum")
+    _require_long_password(body.password)
     user = database.create_user(body.username, hash_password(body.password), body.role)
     if user is None:
         raise HTTPException(409, "Cet identifiant existe déjà")
@@ -218,8 +232,7 @@ def delete_user(user_id: int, admin: dict = Depends(require_admin)):
 
 @router.post("/users/{user_id}/password")
 def reset_password(user_id: int, body: PasswordBody, admin: dict = Depends(require_admin)):
-    if len(body.password) < MIN_PASSWORD_LENGTH:
-        raise HTTPException(400, f"Mot de passe : {MIN_PASSWORD_LENGTH} caractères minimum")
+    _require_long_password(body.password)
     if not database.set_password(user_id, hash_password(body.password)):
         raise HTTPException(404, "Utilisateur introuvable")
     database.audit(admin["username"], "password_reset", f"utilisateur #{user_id}")

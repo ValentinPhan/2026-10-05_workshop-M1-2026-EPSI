@@ -1,5 +1,4 @@
-import React from 'react';
-import { Flex, Layout, Spin } from 'antd';
+import { Flex, Spin } from 'antd';
 import { useAuth } from './hooks/useAuth.js';
 import LoginPage from './components/LoginPage.jsx';
 import Dashboard from './Dashboard.jsx';
@@ -10,9 +9,9 @@ export default function App() {
 
   if (loading) {
     return (
-      <Layout style={{ minHeight: '100vh' }}>
-        <Flex justify="center" align="center" style={{ flex: 1 }}><Spin size="large" /></Flex>
-      </Layout>
+      <div className="app-shell">
+        <Flex justify="center" align="center" style={{ minHeight: '100vh' }}><Spin size="large" /></Flex>
+      </div>
     );
   }
   return user ? <Dashboard user={user} onLogout={logout} /> : <LoginPage onLogin={login} />;

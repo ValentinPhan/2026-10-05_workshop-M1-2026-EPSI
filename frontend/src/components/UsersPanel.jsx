@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { App as AntApp, Button, Flex, Form, Input, List, Modal, Popconfirm, Select, Space, Table, Typography } from 'antd';
 import { deleteJson, getJson, postJson } from '../api.js';
 import { Panel, StatusTag } from './ui.jsx';

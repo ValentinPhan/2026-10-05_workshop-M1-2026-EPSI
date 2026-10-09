@@ -1,1 +1,2 @@
-ultralytics>=8.3
+# mêmes dépendances que le backend (ultralytics, av) : une seule liste à tenir à jour
+-r ../../backend/requirements-vision.txt

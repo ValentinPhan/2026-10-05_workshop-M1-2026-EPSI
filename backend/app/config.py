@@ -93,7 +93,7 @@ class AuthConfig:
     # aléatoire est généré et affiché une seule fois dans la console du backend.
     admin_username: str = os.environ.get("ADMIN_USERNAME", "admin")
     admin_password: str = os.environ.get("ADMIN_PASSWORD", "")
-    # Compte agent (consultation seule) créé en même temps que l'admin, seulement si AGENT_PASSWORD est renseigné.
+    # Compte agent (consultation seule) créé au démarrage s'il n'existe pas, seulement si AGENT_PASSWORD est renseigné.
     agent_username: str = os.environ.get("AGENT_USERNAME", "agent")
     agent_password: str = os.environ.get("AGENT_PASSWORD", "")
     # Jeton des appareils (Raspberry) qui envoient leurs images sur /ws/camera sans passer par un compte.

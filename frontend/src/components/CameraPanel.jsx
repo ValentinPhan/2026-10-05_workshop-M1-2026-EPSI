@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Space, Spin, Switch } from 'antd';
 import { useVideoStream } from '../hooks/useVideoStream.js';
 import { useWebcamUpload } from '../hooks/useWebcamUpload.js';
 import { Panel, StatusTag } from './ui.jsx';
+import { STATUS_COLORS } from '../threat.js';
 
 // Si `camera.streamUrl` est renseigné (flux MJPEG du Pi), on l'affiche ;
 // sinon on dessine un faux flux sur un canvas, avec les détections en surimpression.
@@ -24,7 +25,7 @@ function MockFeed({ detections }) {
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, W, H);
 
-      ctx.strokeStyle = 'rgba(80,200,220,0.07)';
+      ctx.strokeStyle = 'rgba(255,216,59,0.07)';
       ctx.lineWidth = 1;
       for (let gx = 0; gx <= W; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke(); }
       for (let gy = 0; gy <= H; gy += 40) { ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke(); }
@@ -32,9 +33,9 @@ function MockFeed({ detections }) {
       // ligne de balayage
       const sy = ((time / 20) % (H + 60)) - 30;
       const scan = ctx.createLinearGradient(0, sy - 30, 0, sy + 30);
-      scan.addColorStop(0, 'rgba(80,200,220,0)');
-      scan.addColorStop(0.5, 'rgba(80,200,220,0.10)');
-      scan.addColorStop(1, 'rgba(80,200,220,0)');
+      scan.addColorStop(0, 'rgba(255,216,59,0)');
+      scan.addColorStop(0.5, 'rgba(255,216,59,0.10)');
+      scan.addColorStop(1, 'rgba(255,216,59,0)');
       ctx.fillStyle = scan;
       ctx.fillRect(0, sy - 30, W, 60);
 
@@ -47,13 +48,13 @@ function MockFeed({ detections }) {
         ctx.ellipse(bx + bw / 2, by + bh * 0.16, bw * 0.22, bh * 0.13, 0, 0, Math.PI * 2);
         ctx.rect(bx + bw * 0.2, by + bh * 0.3, bw * 0.6, bh * 0.7);
         ctx.fill();
-        ctx.strokeStyle = '#ff5a5f';
+        ctx.strokeStyle = STATUS_COLORS.danger;
         ctx.lineWidth = 2;
         ctx.strokeRect(bx, by, bw, bh);
         const tag = `${d.label} ${Math.round(d.confidence * 100)}%`;
         ctx.font = '600 13px ui-monospace, monospace';
         const tw = ctx.measureText(tag).width + 10;
-        ctx.fillStyle = '#ff5a5f';
+        ctx.fillStyle = STATUS_COLORS.danger;
         ctx.fillRect(bx, by - 20, tw, 20);
         ctx.fillStyle = '#fff';
         ctx.fillText(tag, bx + 5, by - 6);

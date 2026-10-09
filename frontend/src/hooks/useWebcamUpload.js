@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { postJson } from '../api.js';
 
-const FPS = 8; // images envoyées par seconde (YOLO tourne à ~10 images/s côté backend)
+const FPS = 10; // images envoyées par seconde (= plafond VISION_FPS du backend ; c'est aussi le fps des clips vidéo)
 const MAX_WIDTH = 640;
 const JPEG_QUALITY = 0.7;
 const MAX_BUFFERED_BYTES = 500_000; // si le réseau ou YOLO ne suit pas, on saute des images au lieu d'accumuler

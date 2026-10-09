@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Alert, Button, Flex, Space, Typography } from 'antd';
 import { AimOutlined, LeftOutlined, RightOutlined, StopOutlined, SyncOutlined } from '@ant-design/icons';
 import { Panel, StatusTag, Stat, SyncedSlider } from './ui.jsx';

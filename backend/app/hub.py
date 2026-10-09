@@ -23,16 +23,13 @@ from fastapi import WebSocket
 
 from .alerts import AlertEngine
 from .auth import user_from_token
+from .clock import now_ms
 from .config import Config
 from .console import green, red
 from .logger import logger
 from .modules import ModuleMonitor
 
 log = logging.getLogger("sentinel-x")
-
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
 
 
 def _sensor_point(raw: dict) -> dict:
@@ -83,7 +80,7 @@ class Hub:
         self._sweeper: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._last_snapshot_ms: int | None = None  # dernier snapshot reçu du Pi (pour détecter sa perte)
-        self.monitor = ModuleMonitor(config.module_timeout_s, config.dht_stale_s, _now_ms())
+        self.monitor = ModuleMonitor(config.module_timeout_s, config.dht_stale_s, now_ms())
         self._watchdog: asyncio.Task | None = None
         self._monitor_task: asyncio.Task | None = None
         self._monitor_interval_s = config.monitor_interval_s
@@ -207,7 +204,7 @@ class Hub:
         started, self._intrusion = self._intrusion, None
         logger.emit(
             "vision.intrusion_ended", "Intrusion terminée",
-            **({"startedMs": started["startedMs"], "durationMs": _now_ms() - started["startedMs"],
+            **({"startedMs": started["startedMs"], "durationMs": now_ms() - started["startedMs"],
                 "peakPersons": started["peakPersons"], "photos": started["photos"]} if started else {}),
         )
 
@@ -228,7 +225,7 @@ class Hub:
     # ---- chemin rapide ----
     async def on_snapshot(self, raw: dict) -> None:
         self.latest = raw
-        self._last_snapshot_ms = _now_ms()
+        self._last_snapshot_ms = now_ms()
         self.sensor_history.append(_sensor_point(raw))
         await self.broadcast({"type": "snapshot", "data": raw})
         await self._broadcast_alerts(self.alerts.evaluate_sensors(raw))
@@ -253,7 +250,7 @@ class Hub:
                 "ok": True,
                 "source": source,
                 "forTs": raw["ts"],  # snapshot analysé (pour corréler avec les données brutes)
-                "ts": _now_ms(),
+                "ts": now_ms(),
                 "latencyMs": round((time.monotonic() - started) * 1000),
                 "detections": out["detections"],
                 "personCount": sum(1 for d in out["detections"] if d["label"] == "person"),
@@ -271,7 +268,7 @@ class Hub:
                 "ok": False,
                 "source": source,
                 "forTs": raw["ts"],
-                "ts": _now_ms(),
+                "ts": now_ms(),
                 "error": str(err) or type(err).__name__,
                 "detections": [],
                 "personCount": 0,
@@ -315,10 +312,10 @@ class Hub:
 
     async def _check_modules(self) -> None:
         vision = self.vision_status() if self.vision else None
-        transitions = self.monitor.check(_now_ms(), self.latest, self._last_snapshot_ms, vision, self.analysis)
+        transitions = self.monitor.check(now_ms(), self.latest, self._last_snapshot_ms, vision, self.analysis)
         for t in transitions:
             if t["to"] == "lost":
-                since = f"depuis {(_now_ms() - t['lastOkMs']) / 1000:.0f} s" if t["lastOkMs"] else "jamais joint"
+                since = f"depuis {(now_ms() - t['lastOkMs']) / 1000:.0f} s" if t["lastOkMs"] else "jamais joint"
                 log.info(red(f"PERTE DE CONNEXION : {t['label']} — {t['reason']}"))
                 logger.emit(
                     "module.lost", f"Perte de connexion : {t['label']} — {t['reason']}", level="error",
@@ -340,7 +337,7 @@ class Hub:
         while True:
             await asyncio.sleep(self._monitor_interval_s)
             try:
-                age = _now_ms() - self._last_snapshot_ms if self._last_snapshot_ms else None
+                age = now_ms() - self._last_snapshot_ms if self._last_snapshot_ms else None
                 logger.emit(
                     "monitor.snapshot", "Relevé périodique", intervalS=self._monitor_interval_s,
                     uptimeS=round(time.monotonic() - started), snapshotAgeMs=age,

@@ -1,9 +1,6 @@
-import React from 'react';
 import { Button, Flex, Image, List, Progress, Typography } from 'antd';
 import { Panel, StatusTag, LineChart, Stat } from './ui.jsx';
-
-const TONES = { Calme: 'ok', Vigilance: 'warn', Menace: 'danger' };
-const COLORS = { Calme: '#3ecf8e', Vigilance: '#f5a524', Menace: '#ff5a5f' };
+import { THREAT_LEVELS } from '../threat.js';
 
 // `analysis` arrive en différé du modèle IA : null (pas encore de résultat),
 // { ok: false } (modèle injoignable) ou { ok: true, threat, latencyMs, source }.
@@ -13,7 +10,7 @@ export function ThreatPanel({ analysis, threatHistory }) {
     ? <StatusTag>En attente du modèle</StatusTag>
     : !analysis.ok
       ? <StatusTag tone="danger">IA hors ligne</StatusTag>
-      : <StatusTag tone={TONES[threat.label]}>{threat.label}</StatusTag>;
+      : <StatusTag tone={THREAT_LEVELS[threat.label]?.tone}>{threat.label}</StatusTag>;
 
   return (
     <Panel title="Score de menace" extra={tag}>
@@ -21,7 +18,7 @@ export function ThreatPanel({ analysis, threatHistory }) {
         <Progress
           type="dashboard"
           percent={threat?.score ?? 0}
-          strokeColor={threat ? COLORS[threat.label] : undefined}
+          strokeColor={threat ? THREAT_LEVELS[threat.label]?.color : undefined}
           format={() => (threat ? threat.score : '—')}
           size={140}
         />
@@ -64,7 +61,7 @@ const LEVEL_TONE = { critical: 'danger', warning: 'warn', info: 'info' };
 
 export function AlertsPanel({ alerts, triggerScenario, mock }) {
   return (
-    <Panel title="Journal d'alertes" extra={<StatusTag>{alerts.length}</StatusTag>}>
+    <Panel title="Journal des banana-alertes" extra={<StatusTag>{alerts.length}</StatusTag>}>
       {mock && (
         <Flex gap={8} wrap>
           <Button size="small" onClick={() => triggerScenario('intruder')}>Simuler un intrus</Button>
@@ -75,7 +72,7 @@ export function AlertsPanel({ alerts, triggerScenario, mock }) {
       <List
         size="small"
         style={{ maxHeight: 260, overflowY: 'auto' }}
-        locale={{ emptyText: 'Aucune alerte' }}
+        locale={{ emptyText: 'Aucune alerte · les Minions sont calmes' }}
         dataSource={alerts}
         rowKey="id"
         renderItem={(a) => (

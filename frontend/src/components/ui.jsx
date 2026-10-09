@@ -1,13 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, Slider, Statistic, Tag } from 'antd';
+
+// La lueur jaune du panneau suit le curseur (variables --mx / --my lues par styles.css).
+const followPointer = (e) => {
+  const box = e.currentTarget.getBoundingClientRect();
+  e.currentTarget.style.setProperty('--mx', `${e.clientX - box.left}px`);
+  e.currentTarget.style.setProperty('--my', `${e.clientY - box.top}px`);
+};
 
 export function Panel({ title, extra, children }) {
   return (
     <Card
+      className="panel"
       title={title}
       extra={extra}
+      onMouseMove={followPointer}
       style={{ height: '100%' }}
-      styles={{ title: { fontSize: 13, letterSpacing: '0.08em', textTransform: 'uppercase' }, body: { display: 'flex', flexDirection: 'column', gap: 12 } }}
+      styles={{ body: { display: 'flex', flexDirection: 'column', gap: 12 } }}
     >
       {children}
     </Card>

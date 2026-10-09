@@ -5,18 +5,14 @@ SQLAlchemy 2 : le même code tourne sur SQLite (défaut, un simple fichier) et s
 Les méthodes sont synchrones et retournent des dict simples ; depuis du code async, les appeler avec
 `asyncio.to_thread(...)`.
 """
-import time
 from pathlib import Path
 
 from sqlalchemy import BigInteger, Index, Integer, String, Text, create_engine, delete, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
+from .clock import now_ms
 from .logger import logger
-
-
-def _now_ms() -> int:
-    return int(time.time() * 1000)
 
 
 class Base(DeclarativeBase):
@@ -109,7 +105,7 @@ class Database:
         with self._session() as s:
             if s.scalar(select(User.id).where(func.lower(User.username) == username.lower())) is not None:
                 return None
-            row = User(username=username, password_hash=password_hash, role=role, created_at=_now_ms())
+            row = User(username=username, password_hash=password_hash, role=role, created_at=now_ms())
             s.add(row)
             try:
                 s.commit()
@@ -138,13 +134,13 @@ class Database:
     # ---- sessions ----
     def create_session(self, token_hash: str, user_id: int, expires_at: int) -> None:
         with self._session() as s:
-            s.add(SessionRow(token_hash=token_hash, user_id=user_id, created_at=_now_ms(), expires_at=expires_at))
+            s.add(SessionRow(token_hash=token_hash, user_id=user_id, created_at=now_ms(), expires_at=expires_at))
             s.commit()
 
     def user_for_session(self, token_hash: str) -> dict | None:
         with self._session() as s:
             row = s.get(SessionRow, token_hash)
-            if row is None or row.expires_at < _now_ms():
+            if row is None or row.expires_at < now_ms():
                 return None
             user = s.get(User, row.user_id)
             return _user(user) if user else None
@@ -156,7 +152,7 @@ class Database:
 
     def purge_sessions(self) -> None:
         with self._session() as s:
-            s.execute(delete(SessionRow).where(SessionRow.expires_at < _now_ms()))
+            s.execute(delete(SessionRow).where(SessionRow.expires_at < now_ms()))
             s.commit()
 
     # ---- alertes ----
@@ -178,7 +174,7 @@ class Database:
     # ---- audit ----
     def audit(self, username: str | None, action: str, detail: str = "") -> None:
         with self._session() as s:
-            s.add(AuditRow(ts=_now_ms(), username=username, action=action, detail=detail[:2000]))
+            s.add(AuditRow(ts=now_ms(), username=username, action=action, detail=detail[:2000]))
             s.commit()
         # même trace dans le journal JSON (avec l'état complet de l'application)
         logger.emit(

@@ -1,12 +1,11 @@
-import React from 'react';
 import { Flex } from 'antd';
 import { Panel, StatusTag, LineChart, Stat } from './ui.jsx';
 
 // Rampe thermique (sombre -> clair) : 20 °C = froid, 50 °C = très chaud.
 const STOPS = [
-  [0, [20, 12, 60]],
-  [0.35, [140, 30, 110]],
-  [0.65, [235, 100, 40]],
+  [0, [12, 20, 44]],
+  [0.35, [34, 86, 150]],
+  [0.65, [240, 140, 40]],
   [1, [255, 235, 140]],
 ];
 const T_MIN = 20;

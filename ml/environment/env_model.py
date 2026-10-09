@@ -19,7 +19,6 @@ Dans le backend (LocalAnalyzer, voir backend/app/ai/local_analyzer.py) :
   `environment = score_window(window_df, model)` dans le résultat de analyze().
   Copier env_model.joblib dans backend/models/ pour que le backend le charge.
 """
-import math
 import sys
 
 import joblib

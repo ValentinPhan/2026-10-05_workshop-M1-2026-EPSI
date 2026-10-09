@@ -26,7 +26,6 @@ LABELS = {
     "ai": "modèle IA",
 }
 CRITICAL = {"raspberry", "camera"}  # niveau d'alerte « critical » ; les autres sont « warning »
-SENSORS = ("ultrasonic", "thermal", "dht22", "motor")  # portés par le Raspberry
 
 Health = tuple[bool | None, str | None]  # (ok ?, raison) ; ok=None : indéterminé
 

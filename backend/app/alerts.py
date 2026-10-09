@@ -8,8 +8,8 @@ Une alerte est émise au passage "condition fausse -> vraie" (pas à chaque tick
 Avec le service de vision (ANALYZER=local), l'intrusion vient directement de ses événements
 (intrusion_started / intrusion_ended : immédiat, avec la photo) et non du résultat d'analyse en différé.
 """
-import time
 
+from .clock import now_ms
 from .config import Thresholds
 from .logger import logger
 from .modules import CRITICAL, LABELS
@@ -74,7 +74,7 @@ class AlertEngine:
                 }
                 for name, state in states.items()
             ],
-            int(time.time() * 1000),
+            now_ms(),
         )
 
     def intrusion_ended(self) -> None:
