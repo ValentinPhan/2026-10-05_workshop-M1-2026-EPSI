@@ -73,16 +73,18 @@ export function AlertsPanel({ alerts, triggerScenario, mock, edgeMock }) {
       )}
       <List
         size="small"
-        style={{ maxHeight: 260, overflowY: 'auto' }}
+        className="alert-list"
         locale={{ emptyText: 'Aucune alerte · les Minions sont calmes' }}
         dataSource={alerts}
         rowKey="id"
         renderItem={(a) => (
           <List.Item>
-            <Flex gap={12} align="center">
+            <Flex gap={12} align="center" style={{ width: '100%' }}>
               <StatusTag tone={LEVEL_TONE[a.level]}>{a.level}</StatusTag>
-              <Typography.Text type="secondary">{new Date(a.ts).toLocaleTimeString('fr-FR')}</Typography.Text>
-              <span>{a.message}</span>
+              <Typography.Text type="secondary" style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                {new Date(a.ts).toLocaleTimeString('fr-FR')}
+              </Typography.Text>
+              <span style={{ flex: 1, minWidth: 0 }}>{a.message}</span>
               {a.snapshot && (
                 <Image src={a.snapshot} alt="Photo de l'intrusion" width={56} height={42} style={{ objectFit: 'cover', borderRadius: 4 }} />
               )}

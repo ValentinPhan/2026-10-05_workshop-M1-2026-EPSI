@@ -1,5 +1,10 @@
 # Contrat MQTT — Edge Node ESP8266
 
+> **Statut (vendredi 9 octobre) : brique non câblée.** L'Edge Node ESP8266 n'a pas été monté pour la soutenance. Tout ce qui est décrit ici
+> existe dans le dépôt (firmware, broker, PKI, `edge.py`, panneau du dashboard, 27 tests dont le chemin complet en mode simulé), mais
+> **n'a jamais été éprouvé sur un vrai ESP8266** et n'est pas utilisé en démo : le backend tourne en **`EDGE=off`** avec le vrai Pi
+> (défaut quand `PROVIDER=ssh`). Ne pas lancer `EDGE=mock` devant le jury : le panneau afficherait un faux boîtier.
+
 Référence commune entre le firmware (`firmware/esp8266/`), le backend (`backend/app/edge.py`) et l'infra (`infra/`).
 **Toute modification d'un topic ou d'un champ passe par une PR qui met à jour ce fichier.**
 

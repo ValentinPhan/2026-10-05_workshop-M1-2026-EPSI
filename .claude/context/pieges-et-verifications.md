@@ -48,3 +48,14 @@ Les scripts ont été écrits dans un dossier temporaire. Principes pour les ref
 6. **Pi sans Pi** : `camera_push.py --source <fichier.avi> --url ws://localhost:4001/ws/camera --token <DEVICE_TOKEN>` avec le backend en `VISION_SOURCE=push`.
 7. **Échantillons** : vidéo de test `ml/vision/runs/detect/predict-2/0.avi` (`VISION_SOURCE=<chemin>` la rejoue en boucle) ; photos d'exemple de l'équipe IA récupérables avec `git show <commit>:<chemin>` si absentes du dossier.
 8. Le mot de passe admin d'un test est toujours fixé par `ADMIN_PASSWORD` (jamais lu dans un fichier secret de l'utilisateur).
+9. **Tests du dépôt** : `cd backend && python -m pytest tests -q` (27 tests, Edge Node + score de menace ; `conftest.py` pose les variables d'environnement avant tout import de `app`, base et journaux dans un dossier temporaire). `pytest` n'est pas dans `requirements.txt` : `pip install pytest`.
+
+## Pièges de la session du 9 octobre
+
+- **Bash cassé sur la machine de l'utilisateur** (`.bashrc` fait `exec zsh`, absent) : utiliser **PowerShell** pour tout. Chemin absolu obligatoire avec `[IO.File]::…` (le répertoire courant .NET n'est pas celui de PowerShell).
+- **BOM** : `Set-Content -Encoding UTF8` (Windows PowerShell 5.1) ajoute un BOM UTF-8 ; pour modifier un fichier du dépôt, lire / écrire avec `New-Object Text.UTF8Encoding $false` ou passer par l'outil d'édition.
+- **Verrou de connexion** : 5 échecs en 5 min sur un même identifiant bloquent (429), en mémoire ; en cas de test navigateur répété, **redémarrer le backend de test** (pas celui de l'utilisateur).
+- **Vite occupe le port suivant** si 5173 est pris (5174, 5175…) : des instances oubliées font viser la mauvaise page ; vérifier `Get-NetTCPConnection -LocalPort 5173 -State Listen` avant de capturer.
+- **Capturer l'UI** : script puppeteer-core hors dépôt, backend de test (`PROVIDER=mock`, `EDGE=off` ou `mock`, base temporaire), attendre ~10 s après le démarrage ; « Simuler un intrus » (mode mock) fait passer le score en « Menace » en quelques secondes, ce qui montre la mascotte en alerte.
+- **`git pull` avec conflits** : `git status` liste les fichiers « both modified » ; `git diff --check` repère les marqueurs `<<<<<<<` restants ; après résolution, `git add` puis **`git commit`** (l'utilisateur le fait lui-même).
+- **Photos de montage** : réduire avant de versionner (la photo d'origine pèse 13 Mo ; `docs/img/montage-raspberry.jpg` = 1000 px, ~400 Ko).

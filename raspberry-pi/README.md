@@ -5,6 +5,26 @@ Pas de matrice thermique : le snapshot envoie `thermal: null`, le dashboard masq
 
 Le Pi ne fait **aucun calcul d'IA** : `sentinel_agent.py` lit les capteurs et pilote le servo ; le backend (sur le PC) le lance par SSH.
 
+## Montage réel (vendredi 9 octobre)
+
+![Montage réel du boîtier : Raspberry Pi 3, caméra CSI, servo SG90, HC-SR04 sur breadboard, DHT22](../docs/img/montage-raspberry.jpg)
+
+Ce qui est câblé sur la photo, et rien d'autre :
+
+| Élément | Raccordement |
+|---|---|
+| Raspberry Pi 3 Model B | câbles HDMI et USB branchés (écran, alimentation ou clavier : non précisé sur la photo) |
+| Caméra Raspberry Pi (v1) | nappe CSI |
+| Micro-servo SG90 | fils orange / rouge / marron vers le Pi |
+| Capteur ultrason HC-SR04 | via la breadboard, qui porte le **diviseur de tension 1 kΩ / 2 kΩ** de la broche Echo (étiquette « 2K » sur la table) |
+| DHT22 (boîtier noir AM2302) | trois fils longs (rouge, jaune, noir) vers le Pi |
+
+À savoir pour la suite :
+
+- **L'Edge Node ESP8266 (MQ-2 et PIR) n'est pas câblé.** Le firmware, le broker MQTTS et le panneau du dashboard existent dans le dépôt mais ne sont pas utilisés : pour le vrai boîtier, **`EDGE=off`** (le défaut dès que `PROVIDER` n'est pas `mock`). Voir `docs/mqtt-contract.md`.
+- **Pas de matrice thermique** : `thermal` vaut `null`, le dashboard masque le panneau.
+- Sur la photo, une batterie LiPo, un petit écran OLED et un second module ultrason traînent sur la table : le code n'en utilise aucun. *(À corriger ici si l'un d'eux est finalement branché.)*
+
 **Toujours câbler Pi éteint et débranché.** Les GPIO sont en 3,3 V : un signal 5 V sur une broche GPIO l'endommage.
 À prévoir : fils Dupont, breadboard, **une résistance de 1 kΩ et une de 2 kΩ** (diviseur du HC-SR04), alimentation 5 V 2,5 A.
 

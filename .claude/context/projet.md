@@ -16,7 +16,7 @@ En 2050, AetherCorp Industrial Solutions déploie des micro-centrales énergéti
 (cyber, physiques, environnementales). Il faut concevoir **Sentinel-X**, un boîtier de surveillance autonome qui détecte la menace avant qu'elle frappe.
 
 Exigences du sujet :
-- Boîtier **ESP8266 autonome (Edge Node)** avec capteurs température / gaz / présence.
+- Boîtier **ESP8266 autonome (Edge Node)** avec capteurs température / gaz / présence. *(Notre équipe : code écrit, mais **non câblé** le 9 octobre ; démo sur le Pi seul. Un jury qui s'en tient au sujet peut le pénaliser : en parler franchement.)*
 - Liaison sans fil vers un **serveur local** : option A = Raspberry Pi 5 dans le boîtier ; option B = PC portable d'un apprenant (choix dès lundi/mardi).
 - **IA embarquée** : détection d'intrus par vision en temps réel (webcam, YOLOv8-tiny/OpenCV) + détection prédictive d'anomalies température/gaz
   (Isolation Forest / Random Forest), pas de simples seuils fixes.

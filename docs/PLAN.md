@@ -2,13 +2,16 @@
 
 Équipe : 3 développeurs IA, 2 développeurs cybersécurité, 1 DevOps.
 Architecture retenue : PC portable serveur + Raspberry Pi 3 + Edge Node ESP8266 (voir § 2, mis à jour le jeudi 8 octobre).
+**Mise à jour du vendredi 9 octobre : l'ESP8266 n'a finalement pas été câblé.** La démo repose sur le Raspberry Pi (caméra, ultrason, DHT22, servo)
+et le serveur ; le code de l'Edge Node reste dans le dépôt, désactivé (`EDGE=off`). Photo du montage réel : `docs/img/montage-raspberry.jpg`.
 Les sections 3 à 7 sont le plan initial du lundi, conservé pour le rapport.
 
 ---
 
 ## 1. Lecture stratégique du sujet
 
-- **Éliminatoire** : interconnexion des 4 briques (IoT, IA, Infra, Cyber) en démo. Priorité absolue = le flux complet ESP8266 → serveur → dashboard.
+- **Éliminatoire** : interconnexion des 4 briques (IoT, IA, Infra, Cyber) en démo. Priorité absolue = le flux complet capteurs → serveur → dashboard.
+  *(Le sujet impose un Edge Node ESP8266 ; il n'est pas câblé le 9 octobre : le flux de la démo est Pi → serveur → dashboard, et l'oral doit le dire franchement, voir `docs/DEMO.md`.)*
 - **Barème local** : démo live 5, technique/sécurité 4, teaser 4, pitch 4, documentation 3. Le marketing et le pitch pèsent **8/20** : la vidéo et le boîtier ne se font pas le jeudi soir.
 - **Barème national** : 25 pts sur 70 pour une démo sans plantage, avec la stack visible à l'écran. Il faut viser la robustesse plutôt que l'ajout de fonctionnalités.
 - **Point d'attention** : pas de profil « DEV » dans l'équipe. Le firmware C++, l'API et le dashboard sont répartis entre les profils IA et Cyber.
@@ -27,13 +30,14 @@ Le plan initial prévoyait un Raspberry Pi 5 embarqué servant de serveur. L'éq
   └──────▲───────────────────────────────▲─────────────────────────▲─────────┘
          │ SSH (JSON capteurs / moteur)  │ WebSocket /ws/camera     │ MQTTS 8883
   ┌──────┴───────────────────────────────┴──────┐           ┌──────┴──────────────┐
-  │ Raspberry Pi 3 : ultrason, thermique 8×8,    │           │ ESP8266 Edge Node :  │
-  │ DHT22, caméra, servomoteur                   │           │ MQ-2 (gaz), PIR      │
-  └──────────────────────────────────────────────┘           └─────────────────────┘
+  │ Raspberry Pi 3 : ultrason, DHT22,            │           │ ESP8266 Edge Node :  │
+  │ caméra, servomoteur (pas de thermique)       │           │ MQ-2 (gaz), PIR      │
+  └──────────────────────────────────────────────┘           │ NON CÂBLÉ (9 oct.)   │
+                                                             └─────────────────────┘
 ```
 
-- **Les 4 briques sont interconnectées** : IoT (Pi + ESP8266) → Infra (hotspot, Mosquitto en Docker, base) → IA (YOLO, anomalies DHT22, score de menace) → dashboard, avec la **Cyber** sur la liaison ESP (TLS 1.2, mTLS, ACL par boîtier) et sur les comptes (rôles, sessions, audit).
-- **L'ESP8266 est indépendant du Pi** : si le Pi tombe, le gaz et la présence restent surveillés (et inversement).
+- **Briques en démo** : IoT (Pi) → Infra (hotspot, base) → IA (YOLO, anomalies DHT22, score de menace) → dashboard, avec la **Cyber** sur les comptes (rôles, sessions, audit, verrouillage après 5 échecs). La liaison ESP chiffrée (TLS 1.2, mTLS, ACL par boîtier, broker Mosquitto en Docker) est **écrite et testée en simulation, mais pas branchée**.
+- **L'ESP8266 est indépendant du Pi** (conception) : si le Pi tombe, le gaz et la présence resteraient surveillés. Sans boîtier, `EDGE=off` : pas de panneau Edge Node, pas de gaz ni de PIR dans le score de menace.
 - Détails : `docs/mqtt-contract.md` (ESP ↔ broker ↔ backend), `firmware/esp8266/README.md` (câblage, flash), `.claude/context/architecture.md` (backend, front, Pi).
 
 ## 3. Répartition des rôles
@@ -62,7 +66,7 @@ Désigner aussi **un porteur du pitch**, par exemple la personne la plus à l'ai
 | **Jeu. PM** | Pentest croisé : défendre (journaux, captures) et attaquer les autres équipes (Nmap, Wireshark, tentatives MQTT anonymes, SSH). | Rapport de pentest, corrections appliquées |
 | **Vendredi** | Soutenance : 2 répétitions chronométrées (5 min strictes), démo sur scénario scripté. | Les 5 livrables déposés |
 
-## 4 bis. Reste à faire pour la brique ESP8266 (J-1)
+## 4 bis. Reste à faire pour la brique ESP8266 (non réalisé le 9 octobre : à reprendre pour les nationales)
 
 - [ ] Câbler MQ-2 (pont diviseur sur A0) + PIR (D5) ; brancher le MQ-2 au plus tôt (préchauffe).
 - [ ] Sur le PC : `infra/pki/gen-certs.sh`, `docker compose up -d` (dans `infra/`), pare-feu Windows ouvert sur 8883.

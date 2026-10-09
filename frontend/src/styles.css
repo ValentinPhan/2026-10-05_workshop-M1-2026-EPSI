@@ -26,6 +26,9 @@
 @property --mx { syntax: '<length-percentage>'; inherits: false; initial-value: 50%; }
 @property --my { syntax: '<length-percentage>'; inherits: false; initial-value: 0%; }
 
+:root { color-scheme: dark; } /* barres de défilement et contrôles natifs en sombre */
+* { scrollbar-width: thin; scrollbar-color: #3a4252 transparent; }
+
 body {
   margin: 0;
   background:
@@ -98,6 +101,10 @@ body::after {
 }
 .panel.ant-card:hover::before { opacity: 1; }
 .panel.ant-card::after { content: ''; position: absolute; left: 20px; top: 0; width: 26px; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent); }
+/* le corps de la carte occupe toute la hauteur laissée par l'en-tête : un contenu extensible (journal d'alertes) la remplit */
+.panel.ant-card { display: flex; flex-direction: column; }
+.panel .ant-card-body { flex: 1; min-height: 0; }
+.alert-list { flex: 1 1 0; min-height: 200px; overflow-y: auto; } /* basis 0 : la liste défile au lieu d'agrandir la ligne de panneaux */
 .panel .ant-card-head { border-bottom-color: var(--border); }
 .panel .ant-card-head-title { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #d3d9e5; }
 .ant-statistic-content, .ant-statistic-content-value { font-family: var(--font-mono); }

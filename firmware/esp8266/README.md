@@ -1,5 +1,8 @@
 # Firmware Edge Node ESP8266
 
+> **Statut : non câblé, non flashé.** Pour la soutenance du 9 octobre, l'ESP8266 n'a pas été monté (voir `raspberry-pi/README.md`, « Montage réel »).
+> Le firmware reste dans le dépôt pour les qualifications nationales ; il n'a jamais été compilé ni testé sur une carte.
+
 Lit le gaz (MQ-2), la présence (PIR) et, en option, un DHT22, puis publie en **MQTTS** (TLS 1.2 + certificat client) vers le broker Mosquitto du PC. Contrat : [`docs/mqtt-contract.md`](../../docs/mqtt-contract.md).
 
 ## Câblage (NodeMCU v2)

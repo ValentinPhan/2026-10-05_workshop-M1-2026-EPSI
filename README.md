@@ -20,7 +20,13 @@ Deux modes, selon la variable `ANALYZER` :
 | Micro-servomoteur SG90 | oriente le capteur ultrason (radar) |
 | Capteur température / humidité DHT22 | données d'environnement (module « V182 », 3 broches) |
 | Capteur ultrason | mesure de distance (alerte de proximité) |
-| ESP8266 (NodeMCU) — Edge Node | boîtier autonome en MQTTS vers le PC : gaz MQ-2, présence PIR HC-SR501 (voir « Edge Node ESP8266 ») |
+| ~~ESP8266 (NodeMCU) — Edge Node~~ | **non câblé** : gaz MQ-2 et présence PIR HC-SR501 en MQTTS vers le PC. Code, firmware et infra restent dans le dépôt, désactivés (`EDGE=off`) ; voir « Edge Node ESP8266 » |
+
+Photo du montage réel (Raspberry Pi 3, caméra CSI, servo SG90, HC-SR04 sur breadboard avec son diviseur de tension, DHT22) :
+
+![Montage réel du boîtier](docs/img/montage-raspberry.jpg)
+
+Pas de matrice thermique 8×8 sur ce boîtier : `thermal` vaut `null` et le dashboard masque le panneau (voir `raspberry-pi/README.md`).
 
 ## Structure du dépôt
 
@@ -33,8 +39,9 @@ backend/            API FastAPI + vision YOLO  (tourne sur le PC)
     db.py           base de données (SQLite par défaut, PostgreSQL via DATABASE_URL)
     cli.py          gestion des comptes en ligne de commande (mot de passe perdu)
     alerts.py       moteur d'alertes
-    edge.py         Edge Node ESP8266 : client MQTTS (EDGE=mqtt) ou ESP simulé (EDGE=mock)
+    edge.py         Edge Node ESP8266 (NON CÂBLÉ) : client MQTTS (EDGE=mqtt) ou ESP simulé (EDGE=mock) ; EDGE=off pour le boîtier réel
     config.py       seuils et variables d'environnement
+    clock.py        now_ms() : l'heure en millisecondes, format de tous les horodatages
     console.py      couleurs ANSI des messages de statut dans le terminal
     providers/      sources de données du Pi : mock.py · ssh.py (Raspberry réel) · motor.py
     vision/         caméra + YOLO dans un thread dédié : service.py · detector.py
@@ -47,16 +54,18 @@ backend/            API FastAPI + vision YOLO  (tourne sur le PC)
 frontend/           dashboard React / Vite / Ant Design  (navigateur)
   src/
     App.jsx · Dashboard.jsx · api.js   point d'entrée, page principale, appels REST
-    components/     un panneau par capteur (Camera, Ultrasonic, Thermal, Motor, Environment),
-                    InfoPanels, UsersPanel, LoginPage, drawOverlay.js, ui.jsx
-    hooks/          useSentinel (WebSocket), useAuth, useVideoStream, useWebcamUpload
+    threat.js       niveaux de menace (ton, couleur, humeur de la mascotte) : source unique
+    styles.css      thème « labo de Gru » : jetons, grille néon, mascotte, panneaux
+    components/     un panneau par capteur (Camera, Ultrasonic, Thermal, Motor, Environment, Edge),
+                    InfoPanels, UsersPanel, LoginPage, Minion.jsx (mascotte SVG), drawOverlay.js, ui.jsx
+    hooks/          useSentinel (WebSocket), useAuth, useAlarm (sirène « bee-do »), useVideoStream, useWebcamUpload
 raspberry-pi/       scripts qui tournent sur le Raspberry (montage et mise en service : raspberry-pi/README.md)
   sentinel_agent.py lit les capteurs, pilote le servo ; lancé par le backend via SSH (PROVIDER=ssh)
   dht22_reader.py   lecture du DHT22 (une ligne JSON par mesure)
   camera_push.py    envoie les images de la caméra au backend (WebSocket /ws/camera)
-firmware/esp8266/   firmware PlatformIO de l'Edge Node (MQ-2, PIR, MQTTS)
-infra/              broker Mosquitto (Docker) + PKI : mosquitto/ (TLS, ACL) · pki/gen-certs.sh
-docs/               plan d'action, contrat MQTT
+firmware/esp8266/   firmware PlatformIO de l'Edge Node (MQ-2, PIR, MQTTS) : non câblé, jamais testé sur carte
+infra/              broker Mosquitto (Docker) + PKI : mosquitto/ (TLS, ACL) · pki/gen-certs.sh (inutile sans l'ESP)
+docs/               plan d'action, scénario de démo, contrat MQTT ; img/ : photo du montage réel
 ml/                 atelier de l'équipe IA, hors ligne : vision/ (tests YOLO) · environment/ (Isolation Forest DHT22)
 scripts/            run-api.mjs : lance l'API avec le Python du venv (backend/.venv)
 .vscode/            F5 : lance back + front
@@ -193,10 +202,10 @@ Raspberry Pi ──(brut : capteurs)──► backend ──► front   chemin r
 | Thermique | matrice 8×8, moyenne / max, historique |
 | Environnement (DHT22) | température, humidité, point de rosée, score d'anomalie IA et ses raisons, historiques |
 | Moteur | angle, cible, vitesse, mode ; commandes : position, pas, centrer, balayage auto, vitesse, stop |
-| Score de menace | calculé par l'analyseur, affiché en différé : caméra 40 % / ultrason 20 % / PIR de l'ESP8266 10 % / thermique 15 % / environnement 15 %, et **plancher gaz** : le MQ-2 de l'ESP impose un score minimal (0 sous la moitié du seuil `GAS_ALERT_RAW`, 70 = « Menace » au seuil) ; voir `backend/app/ai/threat.py` |
+| Score de menace | calculé par l'analyseur, affiché en différé : caméra 40 % / ultrason 20 % / thermique 15 % / environnement 15 % (+ PIR de l'ESP8266 10 % si `EDGE≠off`). **Plancher « présence confirmée »** : une personne détectée avec une confiance ≥ `person_confidence` (0,6, le seuil de l'alerte d'intrusion) impose « Menace » (60 à 70). **Plancher gaz** (seulement avec un Edge Node) : 0 sous la moitié du seuil `GAS_ALERT_RAW`, 70 au seuil. Voir `backend/app/ai/threat.py` |
 | Alertes | proximité (< 80 cm), pic thermique (> 45 °C), intrusion (avec photo), anomalie d'environnement (score DHT22 ≥ 70) ; seuils dans `backend/app/config.py` |
 | Raspberry Pi | CPU, RAM, température, uptime |
-| Edge Node (ESP8266) | gaz MQ-2 (brut / 1023, courbe et seuil), présence PIR, Wi-Fi, état de la liaison MQTTS, messages perdus |
+| Edge Node (ESP8266) | *(masqué avec `EDGE=off`, le cas du boîtier réel)* gaz MQ-2 (brut / 1023, courbe et seuil), présence PIR, Wi-Fi, état de la liaison MQTTS, messages perdus |
 
 En mode mock, des boutons du journal d'alertes déclenchent un intrus (capteurs), un pic thermique, une fenêtre ouverte, et avec `EDGE=mock` une fuite de gaz ou une présence PIR, pour la démo.
 
@@ -266,6 +275,10 @@ Les clés JSON sont en camelCase (`distanceCm`, `maxC`…) : c'est le contrat av
 - **Testé** : agent seul, chaîne complète avec l'agent local (dashboard compris), vrai SSH contre un serveur `asyncssh` local (connexion, commande, coupure / reconnexion, refus d'une empreinte inconnue, arrêt de l'agent). **Pas encore testé sur le vrai Raspberry** (GPIO, servo, HC-SR04).
 
 ## Edge Node ESP8266 (gaz, présence) en MQTTS
+
+> **Statut au 9 octobre : non câblé, jamais éprouvé sur une vraie carte.** Tout ce qui suit existe dans le dépôt et est testé en simulation
+> (`backend/tests/`, `EDGE=mock`), mais l'ESP n'est pas dans le montage (voir la photo en haut de ce fichier). Pour le boîtier réel : `EDGE=off`
+> (défaut dès que `PROVIDER` n'est pas `mock`). Ne pas utiliser `EDGE=mock` en présentation : le panneau affiche un faux boîtier « Simulé ».
 
 Le sujet impose un boîtier ESP8266 « Edge Node » : il publie gaz (MQ-2) et présence (PIR) vers un broker **Mosquitto** sur le PC,
 en **TLS 1.2 avec certificat client** (mTLS) et **ACL par boîtier**. Le backend s'y abonne (`EDGE=mqtt`), indépendamment du Raspberry.
